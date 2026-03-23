@@ -8,6 +8,8 @@ const API = 'http://127.0.0.1:8000/api'
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [violations, setViolations] = useState([])
+  const [simulating, setSimulating] = useState(false)
+  const [simResult, setSimResult] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -20,10 +22,25 @@ export default function Dashboard() {
     navigate('/login')
   }
 
+  async function handleSimulate() {
+    setSimulating(true)
+    setSimResult(null)
+    try {
+      const res = await axios.post(`${API}/simulate/`)
+      setSimResult(res.data)
+      axios.get(`${API}/stats/`).then(r => setStats(r.data))
+      axios.get(`${API}/violations/`).then(r => setViolations(r.data.slice(0, 5)))
+    } catch (e) {
+      setSimResult({ message: 'Simulation failed' })
+    }
+    setSimulating(false)
+  }
+
   const severityColor = { CRITICAL: '#e53e3e', HIGH: '#dd6b20', MEDIUM: '#d69e2e', LOW: '#38a169' }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#f0f2f5' }}>
+
       {/* Sidebar */}
       <div style={{
         width: 220, background: '#1a1a2e', color: 'white',
@@ -56,10 +73,49 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
+
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700 }}>Dashboard Overview</h1>
-          <span style={{ fontSize: 13, color: '#666' }}>{new Date().toDateString()}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: '#666' }}>{new Date().toDateString()}</span>
+            <button
+              onClick={handleSimulate}
+              disabled={simulating}
+              style={{
+                padding: '10px 20px',
+                background: simulating ? '#999' : '#e53e3e',
+                color: 'white', border: 'none', borderRadius: 8,
+                fontSize: 13, fontWeight: 600,
+                cursor: simulating ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {simulating ? 'Simulating...' : 'Simulate Employee Action'}
+            </button>
+          </div>
         </div>
+
+        {/* Simulation Result Box */}
+        {simResult && (
+          <div style={{
+            background: '#fff8e1', border: '1px solid #f6c90e',
+            borderRadius: 10, padding: 16, marginBottom: 20
+          }}>
+            <p style={{ fontWeight: 600, marginBottom: 6 }}>Simulation Result</p>
+            <p style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>
+              User: <strong>{simResult.user}</strong>
+            </p>
+            <p style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>
+              Action: <strong>{simResult.action}</strong>
+            </p>
+            <p style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>
+              Violations triggered: <strong style={{ color: '#e53e3e' }}>{simResult.violations_triggered}</strong>
+            </p>
+            {simResult.rules_fired && simResult.rules_fired.map(r => (
+              <p key={r} style={{ fontSize: 12, color: '#888', marginLeft: 12 }}>• {r}</p>
+            ))}
+          </div>
+        )}
 
         {/* Stat Cards */}
         {stats && (
@@ -83,11 +139,15 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Bottom Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
           {/* Bar Chart */}
           {stats && (
             <div style={{ background: 'white', borderRadius: 12, padding: 24 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20 }}>Violations by GDPR Article</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20 }}>
+                Violations by GDPR Article
+              </h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={stats.by_article}>
                   <XAxis dataKey="rule__gdpr_article" tick={{ fontSize: 12 }} />
@@ -133,6 +193,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
         </div>
       </div>
     </div>

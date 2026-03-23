@@ -77,3 +77,41 @@ def update_violation_status(request, pk):
         violation.save()
         return Response({'success': True, 'status': violation.status})
     return Response({'error': 'Invalid status'}, status=400)
+
+
+
+
+
+
+
+from django.utils import timezone
+import random
+
+@api_view(['POST'])
+def simulate_action(request):
+    suspicious_log = Log.objects.create(
+        user_id='u_tariq',
+        role='intern',
+        timestamp=timezone.now().replace(hour=2, minute=30),
+        resource_accessed='patient_records',
+        action='EXPORT',
+        sensitivity='HIGH',
+        ip_address='192.168.1.99',
+        declared_purpose='',
+    )
+
+    from .engine import run_rule_engine
+    run_rule_engine()
+
+    from .anomaly import run_anomaly_detection
+    run_anomaly_detection()
+
+    new_violations = Violation.objects.filter(log=suspicious_log)
+
+    return Response({
+        'message': 'Suspicious action simulated successfully',
+        'user': 'u_tariq (intern)',
+        'action': 'EXPORT on patient_records at 2:30 AM',
+        'violations_triggered': new_violations.count(),
+        'rules_fired': [v.rule.rule_id + ' — ' + v.rule.gdpr_article for v in new_violations],
+    })
