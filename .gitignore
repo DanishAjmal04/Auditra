@@ -1,6 +1,59 @@
-venv/
+﻿# Python
 __pycache__/
-*.pyc
-db.sqlite3
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+backend/venv/
+
+# Django
 *.sqlite3
+db.sqlite3
+*.log
+local_settings.py
+staticfiles/
+media/
+
+# Environment / secrets
 .env
+.env.*
+!.env.example
+*.pem
+secrets/
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+# IDE / OS
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.sw?
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Testing / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Misc
+*.bak
+*.tmp
+.cache/

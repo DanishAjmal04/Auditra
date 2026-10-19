@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
+import AlertBanner from '../components/AlertBanner'
+import api from '../utils/axios'
+import Sidebar from '../components/Sidebar'
 
-const API = 'http://127.0.0.1:8000/api'
 const severityColor = { CRITICAL: '#e53e3e', HIGH: '#dd6b20', MEDIUM: '#d69e2e', LOW: '#38a169' }
 const statusColor = { OPEN: '#e53e3e', REVIEWING: '#d69e2e', RESOLVED: '#38a169' }
 
@@ -14,37 +15,19 @@ export default function Violations() {
 
   function fetchViolations() {
     const params = filter ? `?severity=${filter}` : ''
-    axios.get(`${API}/violations/${params}`).then(r => setViolations(r.data))
+    api.get(`/violations/${params}`).then(r => setViolations(r.data))
   }
 
   function updateStatus(id, status) {
-    axios.patch(`${API}/violations/${id}/status/`, { status })
+    api.patch(`/violations/${id}/status/`, { status })
       .then(() => fetchViolations())
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#f0f2f5' }}>
-      {/* Sidebar */}
-      <div style={{
-        width: 220, background: '#1a1a2e', color: 'white',
-        display: 'flex', flexDirection: 'column', padding: '24px 0'
-      }}>
-        <div style={{ padding: '0 24px 24px', borderBottom: '1px solid #2d2d44' }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700 }}>Auditra</h2>
-          <p style={{ fontSize: 10, color: '#8892b0', letterSpacing: 1.5 }}>COMPLIANCE MONITOR</p>
-        </div>
-        <nav style={{ padding: '16px 0', flex: 1 }}>
-          <p style={{ padding: '8px 24px', fontSize: 10, color: '#8892b0', letterSpacing: 1.5 }}>MONITOR</p>
-          <Link to="/dashboard" style={{
-            display: 'block', padding: '10px 24px',
-            color: '#8892b0', textDecoration: 'none', fontSize: 14
-          }}>Dashboard</Link>
-          <Link to="/violations" style={{
-            display: 'block', padding: '10px 24px',
-            color: 'white', textDecoration: 'none', background: '#2d2d44', fontSize: 14
-          }}>Violations</Link>
-        </nav>
-      </div>
+      <AlertBanner />
+      <Sidebar role="compliance" />
+
 
       {/* Main */}
       <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
