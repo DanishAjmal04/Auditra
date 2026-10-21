@@ -3,27 +3,29 @@ import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
 
-function getMockData() {
-  return [
-    { id: 1, user_id: 'user_1042', purpose: 'Marketing emails', lawful_basis: 'CONSENT', declared_at: '2024-01-15', is_valid: false, active_processing: true },
-    { id: 2, user_id: 'user_0893', purpose: 'Analytics tracking', lawful_basis: 'CONSENT', declared_at: '2024-03-20', is_valid: false, active_processing: true },
-    { id: 3, user_id: 'user_1187', purpose: 'Payroll processing', lawful_basis: 'CONTRACT', declared_at: '2023-09-01', is_valid: true, active_processing: true },
-    { id: 4, user_id: 'user_0654', purpose: 'Third party sharing', lawful_basis: 'CONSENT', declared_at: '2024-02-10', is_valid: false, active_processing: false },
-    { id: 5, user_id: 'user_1301', purpose: 'Product recommendations', lawful_basis: 'LEGITIMATE_INTEREST', declared_at: '2023-11-05', is_valid: true, active_processing: true },
-    { id: 6, user_id: 'user_0421', purpose: 'Customer support logs', lawful_basis: 'CONTRACT', declared_at: '2023-07-22', is_valid: true, active_processing: true },
-    { id: 7, user_id: 'user_0992', purpose: 'Newsletter subscription', lawful_basis: 'CONSENT', declared_at: '2024-04-01', is_valid: false, active_processing: true },
-  ]
-}
-
 export default function ConsentManagement() {
   const [records, setRecords] = useState([])
   const [filter, setFilter] = useState('ALL')
+  const [error, setError] = useState('')
+
+  function loadRecords() {
+    api.get('/consent-records/')
+      .then(response => {
+        setRecords(response.data)
+        setError('')
+      })
+      .catch(() => setError('Could not load consent records.'))
+  }
 
   useEffect(() => {
-    api.get(`/consent-records/`)
-      .then(r => setRecords(r.data))
-      .catch(() => setRecords(getMockData()))
+    loadRecords()
   }, [])
+
+  function updateConsent(record, patch) {
+    api.patch(`/consent-records/${record.id}/`, patch)
+      .then(() => loadRecords())
+      .catch(() => setError('Could not update that consent record.'))
+  }
 
   const withdrawn = records.filter(r => !r.is_valid && r.lawful_basis === 'CONSENT')
   const activeWithdrawn = records.filter(r => !r.is_valid && r.active_processing)
@@ -58,6 +60,7 @@ export default function ConsentManagement() {
             GDPR Art. 6 & 7 — Lawful basis verification and consent tracking.
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* Summary Cards */}
         <div style={{
@@ -137,7 +140,7 @@ export default function ConsentManagement() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                {['User', 'Purpose', 'Lawful Basis', 'Declared', 'Consent Status', 'Active Processing', 'Risk'].map(h => (
+                {['User', 'Purpose', 'Lawful Basis', 'Declared', 'Consent Status', 'Active Processing', 'Action'].map(h => (
                   <th key={h} style={{
                     textAlign: 'left', padding: '8px 14px',
                     fontSize: 11, color: '#666',
@@ -196,18 +199,22 @@ export default function ConsentManagement() {
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      {isFlagged ? (
-                        <span style={{
-                          fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                          background: '#fff0f0', color: '#e53e3e', fontWeight: 700
-                        }}>
-                          🚨 VIOLATION
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: '#38a169', fontWeight: 600 }}>
-                          ✓ OK
-                        </span>
-                      )}
+                      <button
+                        onClick={() => updateConsent(rec, {
+                          is_valid: !rec.is_valid,
+                          active_processing: rec.active_processing,
+                        })}
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                          border: '1px solid #ddd',
+                          background: 'white',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {rec.is_valid ? 'Withdraw' : 'Restore'}
+                      </button>
                     </td>
                   </tr>
                 )

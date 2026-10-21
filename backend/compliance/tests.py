@@ -13,7 +13,7 @@ from .models import (
     BreachRecord, ProcessingActivity, DPORecord, NotificationLog,
     ComplianceJobRun,
 )
-from .rule_engine import check_all_rules, create_violation
+from .rule_engine import check_all_rules, check_overdue_breaches, create_violation
 from .notifications import (
     notify_critical_violation,
     send_pending_compliance_notifications,
@@ -275,7 +275,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_001')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 15', articles)
@@ -289,7 +289,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_002')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 16', articles)
@@ -303,7 +303,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_003')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 17', articles)
@@ -317,7 +317,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_004')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 18', articles)
@@ -331,7 +331,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_005')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 20', articles)
@@ -345,7 +345,7 @@ class RuleEngineTests(TestCase):
             response_deadline=timezone.now() - timedelta(days=5),
             status='PENDING'
         )
-        log = create_log()
+        log = create_log(user_id='user_006')
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 21', articles)
@@ -370,6 +370,24 @@ class RuleEngineTests(TestCase):
         articles = [v.rule.gdpr_article for v in violations]
         self.assertIn('Art. 25', articles)
 
+    def test_windows_account_high_access_is_art25(self):
+        """A machine account is staff, not an analyst, so HIGH data is out of role."""
+        log = create_log(
+            user_id=r'DESKTOP\ataur',
+            resource_sensitivity='HIGH',
+            purpose='Daily work',
+        )
+        violations = check_all_rules(log)
+        articles = [v.rule.gdpr_article for v in violations]
+        self.assertIn('Art. 25', articles)
+
+    def test_rule_risk_score_is_fixed_for_severity(self):
+        rule = Rule.objects.get(gdpr_article='Art. 5')
+        first = create_violation(create_log(user_id='u_score_a'), rule, 'first')
+        second = create_violation(create_log(user_id='u_score_b'), rule, 'second')
+        self.assertEqual(first.risk_score, 0.95)
+        self.assertEqual(second.risk_score, 0.95)
+
     def test_tc26_art25_no_trigger_analyst(self):
         """TC-26: Art.25 does not fire for ANALYST on HIGH sensitivity"""
         log = create_log(
@@ -384,7 +402,7 @@ class RuleEngineTests(TestCase):
         """TC-27: Art.30 fires when processing not in RoPA"""
         log = create_log(
             resource_sensitivity='HIGH',
-            purpose=None
+            purpose='Unlisted activity',
         )
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
@@ -393,8 +411,10 @@ class RuleEngineTests(TestCase):
     def test_tc28_art32_after_hours(self):
         """TC-28: Art.32 fires on after-hours HIGH sensitivity access"""
         log = create_log(
+            action='EXPORT',
             resource_sensitivity='HIGH',
-            is_outside_hours=True
+            is_outside_hours=True,
+            purpose='After hours transfer',
         )
         violations = check_all_rules(log)
         articles = [v.rule.gdpr_article for v in violations]
@@ -426,9 +446,16 @@ class RuleEngineTests(TestCase):
             severity='CRITICAL'
         )
         log2 = create_log()
-        violations = check_all_rules(log2)
-        articles = [v.rule.gdpr_article for v in violations]
-        self.assertIn('Art. 33', articles)
+        check_overdue_breaches()
+        articles = list(
+            Violation.objects.filter(log=log2, rule__gdpr_article='Art. 33')
+            .values_list('rule__gdpr_article', flat=True)
+        )
+        # The deadline is attached to the breach's own log, not the next unrelated event.
+        self.assertTrue(
+            Violation.objects.filter(rule__gdpr_article='Art. 33').exists()
+        )
+        self.assertNotIn('Art. 33', articles)
 
     def test_tc31_art37_no_dpo(self):
         """TC-31: Art.37 fires when no DPO exists and HIGH risk processing"""
@@ -439,9 +466,9 @@ class RuleEngineTests(TestCase):
         self.assertIn('Art. 37', articles)
 
     def test_tc32_art83_repeated_violations(self):
-        """TC-32: Art.83 fires when user has 3+ violations in 7 days"""
+        """TC-32: Art.83 fires when user has 5 or more violations in 7 days"""
         rule = Rule.objects.get(gdpr_article='Art. 5')
-        for _ in range(3):
+        for _ in range(5):
             log = create_log(user_id='u_repeat')
             Violation.objects.create(
                 log=log, rule=rule,
@@ -463,6 +490,7 @@ class AnomalyDetectionTests(TestCase):
 
     def setUp(self):
         create_rule('Art. 5', 'CRITICAL')
+        create_rule('ML-ANOMALY', 'HIGH')
 
     def test_tc33_anomaly_detection_runs(self):
         """TC-33: Anomaly detection runs without error on sufficient logs"""
@@ -675,6 +703,74 @@ class IntegrationTests(TestCase):
         self.assertIn('engine_status', res.data)
         self.assertIn('db_status', res.data)
         self.assertIn('total_logs', res.data)
+
+    def test_ingest_api_key_creates_a_log(self):
+        client = APIClient()
+        response = client.post(
+            '/api/ingest/',
+            {
+                'logs': [{
+                    'user_id': 'agent_user',
+                    'timestamp': timezone.now().isoformat(),
+                    'resource_accessed': 'security_logs',
+                    'action': 'LOGIN',
+                    'resource_sensitivity': 'LOW',
+                    'ip_address': '10.0.0.8',
+                    'purpose': 'Windows event log',
+                }],
+            },
+            format='json',
+            HTTP_X_AUDITRA_INGEST_KEY='auditra-ingest-dev-key',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created'], 1)
+        self.assertTrue(Log.objects.filter(user_id='agent_user').exists())
+
+    def test_ingest_rejects_a_bad_key(self):
+        client = APIClient()
+        response = client.post(
+            '/api/ingest/',
+            {'logs': [{'user_id': 'nobody'}]},
+            format='json',
+            HTTP_X_AUDITRA_INGEST_KEY='wrong',
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_consent_can_be_withdrawn(self):
+        record = ConsentRecord.objects.create(
+            user_id='u_toggle',
+            purpose='Marketing',
+            lawful_basis='CONSENT',
+            declared_at=timezone.now(),
+            is_valid=True,
+            active_processing=True,
+        )
+        response = self.client.patch(
+            f'/api/consent-records/{record.id}/',
+            {'is_valid': False, 'active_processing': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        record.refresh_from_db()
+        self.assertFalse(record.is_valid)
+        self.assertTrue(record.active_processing)
+
+    def test_subject_access_status_can_be_updated(self):
+        request_row = DataSubjectRequest.objects.create(
+            subject_id='user_status',
+            right_type='ACCESS',
+            received_at=timezone.now(),
+            response_deadline=timezone.now() + timedelta(days=30),
+            status='PENDING',
+        )
+        response = self.client.patch(
+            f'/api/subject-access-requests/{request_row.id}/',
+            {'status': 'IN_PROGRESS'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        request_row.refresh_from_db()
+        self.assertEqual(request_row.status, 'IN_PROGRESS')
 
 
 class DPOVerificationTests(TestCase):

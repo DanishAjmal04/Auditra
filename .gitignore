@@ -27,6 +27,9 @@ media/
 .env
 .env.*
 !.env.example
+
+# Windows agent watermark
+backend/compliance/agent_state.json
 *.pem
 secrets/
 

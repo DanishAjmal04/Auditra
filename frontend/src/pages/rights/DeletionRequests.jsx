@@ -6,36 +6,32 @@ import api from '../../utils/axios'
 function getDaysRemaining(deadline) {
   const now = new Date()
   const end = new Date(deadline)
-  const diff = Math.ceil((end - now) / (1000 * 60 * 60 * 24))
-  return diff
-}
-
-function getMockData() {
-  const today = new Date()
-  const addDays = (d) => {
-    const x = new Date(today)
-    x.setDate(x.getDate() + d)
-    return x.toISOString().slice(0, 10)
-  }
-  return [
-    { id: 1, subject_id: 'user_1042', received_at: '2025-06-01', deadline: addDays(2), status: 'PENDING' },
-    { id: 2, subject_id: 'user_0893', received_at: '2025-05-28', deadline: addDays(-3), status: 'PENDING' },
-    { id: 3, subject_id: 'user_1187', received_at: '2025-06-05', deadline: addDays(10), status: 'IN_PROGRESS' },
-    { id: 4, subject_id: 'user_0654', received_at: '2025-06-08', deadline: addDays(18), status: 'PENDING' },
-    { id: 5, subject_id: 'user_1301', received_at: '2025-05-20', deadline: addDays(-8), status: 'PENDING' },
-    { id: 6, subject_id: 'user_0421', received_at: '2025-06-10', deadline: addDays(25), status: 'COMPLETED' },
-  ]
+  return Math.ceil((end - now) / (1000 * 60 * 60 * 24))
 }
 
 export default function DeletionRequests() {
   const [requests, setRequests] = useState([])
   const [filter, setFilter] = useState('ALL')
+  const [error, setError] = useState('')
+
+  function loadRequests() {
+    api.get('/deletion-requests/')
+      .then(response => {
+        setRequests(response.data)
+        setError('')
+      })
+      .catch(() => setError('Could not load deletion requests.'))
+  }
 
   useEffect(() => {
-    api.get(`/deletion-requests/`)
-      .then(r => setRequests(r.data))
-      .catch(() => setRequests(getMockData()))
+    loadRequests()
   }, [])
+
+  function updateStatus(requestRow, status) {
+    api.patch(`/deletion-requests/${requestRow.id}/`, { status })
+      .then(() => loadRequests())
+      .catch(() => setError('Could not update that request.'))
+  }
 
   const filtered = requests.filter(r => {
     if (filter === 'ALL') return true
@@ -72,12 +68,6 @@ export default function DeletionRequests() {
     return { text: `${days} days left`, color: '#38a169' }
   }
 
-  const statusColor = {
-    PENDING: { bg: '#fff0f0', text: '#e53e3e' },
-    IN_PROGRESS: { bg: '#fff8e1', text: '#dd6b20' },
-    COMPLETED: { bg: '#f0fff4', text: '#38a169' }
-  }
-
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#f0f2f5' }}>
       <Sidebar role="compliance" />
@@ -92,6 +82,7 @@ export default function DeletionRequests() {
             GDPR Art. 17 — Right to Erasure. Requests must be fulfilled within 30 days.
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* Summary Cards */}
         <div style={{
@@ -168,7 +159,7 @@ export default function DeletionRequests() {
                       {req.subject_id}
                     </td>
                     <td style={{ padding: '12px 14px', color: '#555' }}>
-                      {req.received_at}
+                      {req.received_at_date || req.received_at}
                     </td>
                     <td style={{ padding: '12px 14px', color: '#555' }}>
                       {req.deadline}
@@ -183,14 +174,20 @@ export default function DeletionRequests() {
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                        background: statusColor[req.status]?.bg || '#f0f0f0',
-                        color: statusColor[req.status]?.text || '#666',
-                        fontWeight: 600
-                      }}>
-                        {req.status.replace('_', ' ')}
-                      </span>
+                      <select
+                        value={req.status}
+                        onChange={event => updateStatus(req, event.target.value)}
+                        style={{
+                          fontSize: 12,
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                          border: '1px solid #ddd',
+                        }}
+                      >
+                        <option value="PENDING">Pending</option>
+                        <option value="IN_PROGRESS">In progress</option>
+                        <option value="COMPLETED">Completed</option>
+                      </select>
                     </td>
                   </tr>
                 )

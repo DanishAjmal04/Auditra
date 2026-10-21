@@ -219,8 +219,8 @@ export default function Login() {
 
 
         {[
-          'Rule-based violation detection',
-          'AI-assisted anomaly detection',
+          'Rule-based GDPR checks',
+          'One-Class SVM (CERT-trained) supporting detector',
           'Automated compliance reporting',
           'GDPR Article traceability'
         ].map((feature) => (

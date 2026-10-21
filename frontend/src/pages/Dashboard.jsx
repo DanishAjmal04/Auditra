@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Sidebar from '../components/Sidebar'
 import AlertBanner from '../components/AlertBanner'
@@ -9,36 +9,20 @@ import api from '../utils/axios'
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [violations, setViolations] = useState([])
-  const [simulating, setSimulating] = useState(false)
-  const [simResult, setSimResult] = useState(null)
+  const [logs, setLogs] = useState([])
+  const [checkedAt, setCheckedAt] = useState(null)
 
   useEffect(() => {
-  fetchData()
-  
-  // Har 30 seconds mein auto refresh
-  const interval = setInterval(() => {
     fetchData()
-  }, 30000)
-  
-  return () => clearInterval(interval)
-}, [])
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
-function fetchData() {
-  api.get('/stats/').then(r => setStats(r.data))
-  api.get('/violations/').then(r => setViolations(r.data.slice(0, 5)))
-}
-
-  async function handleSimulate() {
-    setSimulating(true)
-    setSimResult(null)
-    try {
-      const res = await api.post(`/simulate/`)
-      setSimResult(res.data)
-      fetchData()
-    } catch (e) {
-      setSimResult({ message: 'Simulation failed' })
-    }
-    setSimulating(false)
+  function fetchData() {
+    api.get('/stats/').then(r => setStats(r.data)).catch(() => setStats(null))
+    api.get('/violations/').then(r => setViolations(r.data.slice(0, 5))).catch(() => setViolations([]))
+    api.get('/logs/').then(r => setLogs(r.data.slice(0, 6))).catch(() => setLogs([]))
+    setCheckedAt(new Date())
   }
 
   const severityColor = {
@@ -65,60 +49,10 @@ function fetchData() {
           marginBottom: 28
         }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Dashboard Overview</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: '#666' }}>
-              {new Date().toDateString()}
-            </span>
-            <button
-              onClick={handleSimulate}
-              disabled={simulating}
-              style={{
-                padding: '10px 20px',
-                background: simulating ? '#999' : '#e53e3e',
-                color: 'white',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: simulating ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {simulating ? 'Simulating...' : 'Simulate Employee Action'}
-            </button>
-          </div>
+          <span style={{ fontSize: 13, color: '#666' }}>
+            Live · checked {checkedAt ? checkedAt.toLocaleTimeString() : '…'}
+          </span>
         </div>
-
-        {/* Simulation Result */}
-        {simResult && (
-          <div style={{
-            background: '#fff8e1',
-            border: '1px solid #f6c90e',
-            borderRadius: 10,
-            padding: 16,
-            marginBottom: 20
-          }}>
-            <p style={{ fontWeight: 600, marginBottom: 6, margin: '0 0 6px' }}>
-              Simulation Result
-            </p>
-            <p style={{ fontSize: 13, color: '#555', margin: '0 0 4px' }}>
-              User: <strong>{simResult.user}</strong>
-            </p>
-            <p style={{ fontSize: 13, color: '#555', margin: '0 0 4px' }}>
-              Action: <strong>{simResult.action}</strong>
-            </p>
-            <p style={{ fontSize: 13, color: '#555', margin: '0 0 4px' }}>
-              Violations triggered:{' '}
-              <strong style={{ color: '#e53e3e' }}>
-                {simResult.violations_triggered}
-              </strong>
-            </p>
-            {simResult.rules_fired && simResult.rules_fired.map(r => (
-              <p key={r} style={{ fontSize: 12, color: '#888', margin: '2px 0 0 12px' }}>
-                • {r}
-              </p>
-            ))}
-          </div>
-        )}
 
         {/* Stat Cards */}
         {stats && (
@@ -161,6 +95,32 @@ function fetchData() {
             ))}
           </div>
         )}
+
+        <div style={{ background: 'white', borderRadius: 12, padding: 24, marginBottom: 20 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px' }}>
+            Latest activity received
+          </h3>
+          {logs.length === 0 && (
+            <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
+              No activity yet. When this laptop sends a Windows event, it appears here.
+            </p>
+          )}
+          {logs.map(log => (
+            <div key={log.id} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '8px 0',
+              borderBottom: '1px solid #f0f0f0',
+              fontSize: 13
+            }}>
+              <span style={{ fontWeight: 600 }}>{log.user_id}</span>
+              <span>{log.action}</span>
+              <span style={{ color: '#555' }}>{log.resource_accessed}</span>
+              <span style={{ color: '#888' }}>{new Date(log.timestamp).toLocaleTimeString()}</span>
+            </div>
+          ))}
+        </div>
 
         {/* Bottom Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>

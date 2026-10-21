@@ -2,28 +2,10 @@ import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
-
 function getDaysRemaining(deadline) {
   const now = new Date()
   const end = new Date(deadline)
   return Math.ceil((end - now) / (1000 * 60 * 60 * 24))
-}
-
-function getMockData() {
-  const today = new Date()
-  const addDays = (d) => {
-    const x = new Date(today)
-    x.setDate(x.getDate() + d)
-    return x.toISOString().slice(0, 10)
-  }
-  return [
-    { id: 1, subject_id: 'user_1042', right_type: 'ACCESS', received_at: '2025-06-01', deadline: addDays(3), status: 'PENDING' },
-    { id: 2, subject_id: 'user_0893', right_type: 'RECTIFICATION', received_at: '2025-05-25', deadline: addDays(-5), status: 'PENDING' },
-    { id: 3, subject_id: 'user_1187', right_type: 'PORTABILITY', received_at: '2025-06-05', deadline: addDays(15), status: 'IN_PROGRESS' },
-    { id: 4, subject_id: 'user_0654', right_type: 'RESTRICTION', received_at: '2025-06-08', deadline: addDays(20), status: 'PENDING' },
-    { id: 5, subject_id: 'user_1301', right_type: 'OBJECTION', received_at: '2025-05-18', deadline: addDays(-12), status: 'IN_PROGRESS' },
-    { id: 6, subject_id: 'user_0421', right_type: 'ACCESS', received_at: '2025-06-10', deadline: addDays(28), status: 'COMPLETED' },
-  ]
 }
 
 const rightColor = {
@@ -44,12 +26,26 @@ const statusColor = {
 export default function SubjectAccess() {
   const [requests, setRequests] = useState([])
   const [filter, setFilter] = useState('ALL')
+  const [error, setError] = useState('')
+
+  function loadRequests() {
+    api.get('/subject-access-requests/')
+      .then(response => {
+        setRequests(response.data)
+        setError('')
+      })
+      .catch(() => setError('Could not load subject-access requests.'))
+  }
 
   useEffect(() => {
-    api.get(`/subject-access-requests/`)
-      .then(r => setRequests(r.data))
-      .catch(() => setRequests(getMockData()))
+    loadRequests()
   }, [])
+
+  function updateStatus(requestRow, status) {
+    api.patch(`/subject-access-requests/${requestRow.id}/`, { status })
+      .then(() => loadRequests())
+      .catch(() => setError('Could not update that request.'))
+  }
 
   const overdue = requests.filter(r =>
     getDaysRemaining(r.deadline) < 0 && r.status !== 'COMPLETED'
@@ -84,6 +80,7 @@ export default function SubjectAccess() {
             GDPR Art. 15–21 — All requests must be responded to within 30 days.
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* Summary Cards */}
         <div style={{
@@ -202,14 +199,21 @@ export default function SubjectAccess() {
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                        background: statusColor[req.status]?.bg || '#f0f0f0',
-                        color: statusColor[req.status]?.text || '#666',
-                        fontWeight: 600
-                      }}>
-                        {req.status.replace('_', ' ')}
-                      </span>
+                      <select
+                        value={req.status}
+                        onChange={event => updateStatus(req, event.target.value)}
+                        style={{
+                          fontSize: 12,
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                          border: `1px solid ${statusColor[req.status]?.text || '#ddd'}`,
+                          color: statusColor[req.status]?.text || '#666',
+                        }}
+                      >
+                        <option value="PENDING">Pending</option>
+                        <option value="IN_PROGRESS">In progress</option>
+                        <option value="COMPLETED">Completed</option>
+                      </select>
                     </td>
                   </tr>
                 )

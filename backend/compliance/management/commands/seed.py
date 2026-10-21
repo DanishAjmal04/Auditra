@@ -15,6 +15,7 @@ class Command(BaseCommand):
         self.seed_processing_activities()
         self.seed_dpo_record()
         self.seed_logs()
+        self.seed_breach_samples()
         self.stdout.write(self.style.SUCCESS('Database seeded successfully!'))
 
     def seed_rules(self):
@@ -41,7 +42,8 @@ class Command(BaseCommand):
             ('Art. 33', 'Data breach not reported within 72 hours', 'breach_unreported=TRUE AND deadline_passed=TRUE', 'CRITICAL'),
             ('Art. 34', 'Data subjects not notified of high risk breach', 'breach_high_risk=TRUE AND subjects_notified=FALSE', 'HIGH'),
             ('Art. 37', 'No DPO designated for high-risk processing', 'dpo_exists=FALSE AND sensitivity=HIGH', 'HIGH'),
-            ('Art. 83', 'High penalty risk — repeated violations by same user', 'violations_last_7_days >= 3', 'CRITICAL'),
+            ('Art. 83', 'High penalty risk — repeated violations by same user', 'violations_last_7_days >= 5', 'CRITICAL'),
+            ('ML-ANOMALY', 'Unusual user-day scored by the CERT-trained One-Class SVM', 'anomaly_pct > 60', 'HIGH'),
             ('Art. 87', 'National ID data processed without safeguards', 'resource IN national_id AND purpose=NULL', 'HIGH'),
             ('Art. 88', 'Employee data processed without legal basis', 'resource IN employee_data AND purpose=NULL AND action IN [EXPORT,DELETE]', 'HIGH'),
         ]
@@ -55,7 +57,7 @@ class Command(BaseCommand):
                 enabled=True
             )
 
-        self.stdout.write(f'  ✓ {len(rules)} rules created')
+        self.stdout.write(f'  OK {len(rules)} rules created')
 
     def seed_users(self):
         from compliance.models import AuditraUser
@@ -83,7 +85,7 @@ class Command(BaseCommand):
             user.set_password(password)
             user.save(update_fields=['password'])
 
-        self.stdout.write(f'  ✓ {len(users)} Auditra users created or updated')
+        self.stdout.write(f'  OK {len(users)} Auditra users created or updated')
 
     def seed_consent_records(self):
         from compliance.models import ConsentRecord
@@ -110,7 +112,7 @@ class Command(BaseCommand):
                 active_processing=active
             )
 
-        self.stdout.write(f'  ✓ {len(records)} consent records created')
+        self.stdout.write(f'  OK {len(records)} consent records created')
 
     def seed_subject_requests(self):
         from compliance.models import DataSubjectRequest
@@ -126,9 +128,13 @@ class Command(BaseCommand):
             ('user_1301', 'OBJECTION', now - timedelta(days=40), now - timedelta(days=10)),
             ('user_0421', 'ERASURE', now - timedelta(days=5), now + timedelta(days=25)),
             ('user_0992', 'ACCESS', now - timedelta(days=20), now + timedelta(days=10)),
+            ('u_hassan', 'ERASURE', now - timedelta(days=40), now - timedelta(days=10)),
         ]
 
-        statuses = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'PENDING', 'PENDING', 'IN_PROGRESS', 'PENDING']
+        statuses = [
+            'PENDING', 'IN_PROGRESS', 'COMPLETED', 'PENDING',
+            'PENDING', 'IN_PROGRESS', 'PENDING', 'PENDING',
+        ]
 
         for i, (subject, right, received, deadline) in enumerate(requests):
             DataSubjectRequest.objects.create(
@@ -139,7 +145,7 @@ class Command(BaseCommand):
                 status=statuses[i]
             )
 
-        self.stdout.write(f'  ✓ {len(requests)} subject requests created')
+        self.stdout.write(f'  OK {len(requests)} subject requests created')
 
     def seed_processing_activities(self):
         from compliance.models import ProcessingActivity
@@ -162,7 +168,7 @@ class Command(BaseCommand):
                 security_measures=measures
             )
 
-        self.stdout.write(f'  ✓ {len(activities)} processing activities created')
+        self.stdout.write(f'  OK {len(activities)} processing activities created')
 
     def seed_dpo_record(self):
         from compliance.models import DPORecord
@@ -182,7 +188,7 @@ class Command(BaseCommand):
             published_contact_details=True,
         )
 
-        self.stdout.write('  ✓ DPO record created')
+        self.stdout.write('  OK DPO record created')
 
     def seed_logs(self):
         from compliance.log_generator import generate_bulk_logs
@@ -195,5 +201,49 @@ class Command(BaseCommand):
             violations = check_all_rules(log)
             violation_count += len(violations)
 
-        self.stdout.write(f'  ✓ 200 logs generated')
-        self.stdout.write(f'  ✓ {violation_count} violations detected')
+        self.stdout.write(f'  OK 200 logs generated')
+        self.stdout.write(f'  OK {violation_count} violations detected')
+
+    def seed_breach_samples(self):
+        from compliance.models import BreachRecord, Log, Violation
+        from compliance.rule_engine import check_all_rules, check_overdue_breaches
+
+        access_log = Log.objects.create(
+            user_id='user_1042',
+            timestamp=timezone.now(),
+            resource_accessed='customer_data',
+            action='READ',
+            resource_sensitivity='LOW',
+            ip_address='192.168.1.10',
+            purpose='Subject follow-up',
+            is_outside_hours=False,
+        )
+        check_all_rules(access_log)
+
+        violation = (
+            Violation.objects
+            .filter(rule__severity='CRITICAL')
+            .order_by('-detected_at')
+            .first()
+        ) or Violation.objects.order_by('-detected_at').first()
+        if violation is None:
+            self.stdout.write('  ! No violation available for breach samples')
+            return
+
+        BreachRecord.objects.all().delete()
+        BreachRecord.objects.create(
+            violation=violation,
+            notification_deadline=timezone.now() - timedelta(hours=6),
+            notification_sent=False,
+            severity='CRITICAL',
+        )
+        other = Violation.objects.exclude(pk=violation.pk).first()
+        if other is not None:
+            BreachRecord.objects.create(
+                violation=other,
+                notification_deadline=timezone.now() + timedelta(hours=20),
+                notification_sent=False,
+                severity='HIGH',
+            )
+        created = check_overdue_breaches()
+        self.stdout.write(f'  OK Breach samples created ({len(created)} deadline violations)')

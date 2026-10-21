@@ -2,24 +2,6 @@ import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
-function getMockRules() {
-  return [
-    { id: 1, gdpr_article: 'Art. 5', description: 'Bulk export of personal records without authorization', severity: 'CRITICAL', enabled: true },
-    { id: 2, gdpr_article: 'Art. 6', description: 'Processing without valid lawful basis', severity: 'HIGH', enabled: true },
-    { id: 3, gdpr_article: 'Art. 7', description: 'Processing after consent withdrawal', severity: 'CRITICAL', enabled: true },
-    { id: 4, gdpr_article: 'Art. 9', description: 'Unauthorized access to special category data', severity: 'CRITICAL', enabled: true },
-    { id: 5, gdpr_article: 'Art. 17', description: 'Failure to process erasure request within 30 days', severity: 'HIGH', enabled: true },
-    { id: 6, gdpr_article: 'Art. 20', description: 'Denial of data portability request', severity: 'MEDIUM', enabled: true },
-    { id: 7, gdpr_article: 'Art. 22', description: 'Automated decision without human review', severity: 'HIGH', enabled: false },
-    { id: 8, gdpr_article: 'Art. 25', description: 'Access beyond role scope — data minimisation violation', severity: 'HIGH', enabled: true },
-    { id: 9, gdpr_article: 'Art. 30', description: 'Processing activity not in Records of Processing', severity: 'MEDIUM', enabled: true },
-    { id: 10, gdpr_article: 'Art. 32', description: 'After-hours access to sensitive data', severity: 'HIGH', enabled: true },
-    { id: 11, gdpr_article: 'Art. 33', description: 'Data breach not reported within 72 hours', severity: 'CRITICAL', enabled: true },
-    { id: 12, gdpr_article: 'Art. 37', description: 'No DPO designated for high-risk processing', severity: 'HIGH', enabled: false },
-    { id: 13, gdpr_article: 'Art. 83', description: 'High penalty risk — repeated violations detected', severity: 'CRITICAL', enabled: true },
-  ]
-}
-
 const severityColor = {
   CRITICAL: { bg: '#fff0f0', text: '#e53e3e' },
   HIGH: { bg: '#fff8e1', text: '#dd6b20' },
@@ -30,12 +12,22 @@ const severityColor = {
 export default function ConfigureRules() {
   const [rules, setRules] = useState([])
   const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    api.get(`/rules/`)
-      .then(r => setRules(r.data))
-      .catch(() => setRules(getMockRules()))
+    api.get('/rules/')
+      .then(response => setRules(response.data))
+      .catch(() => setError('Could not load rules.'))
   }, [])
+
+  function toggleRule(rule) {
+    api.patch(`/rules/${rule.id}/`, { enabled: !rule.enabled })
+      .then(response => {
+        setRules(current => current.map(item => item.id === rule.id ? response.data : item))
+        setError('')
+      })
+      .catch(() => setError('Could not update that rule.'))
+  }
 
   const filtered = rules.filter(r =>
     r.gdpr_article.toLowerCase().includes(search.toLowerCase()) ||
@@ -56,9 +48,10 @@ export default function ConfigureRules() {
             Configure Rules
           </h1>
           <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
-            {enabledCount} of {rules.length} rules active.
+            {enabledCount} of {rules.length} rules active. Disabled rules are not checked.
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* SEARCH */}
         <input
@@ -83,7 +76,7 @@ export default function ConfigureRules() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                {['Article', 'Description', 'Severity'].map(h => (
+                {['Article', 'Description', 'Severity', 'Enabled'].map(h => (
                   <th
                     key={h}
                     style={{
@@ -131,6 +124,23 @@ export default function ConfigureRules() {
                     >
                       {rule.severity}
                     </span>
+                  </td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <button
+                      onClick={() => toggleRule(rule)}
+                      style={{
+                        fontSize: 12,
+                        padding: '4px 10px',
+                        borderRadius: 4,
+                        border: '1px solid #ddd',
+                        background: rule.enabled ? '#f0fff4' : '#fff0f0',
+                        color: rule.enabled ? '#38a169' : '#e53e3e',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {rule.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
                   </td>
                 </tr>
               ))}

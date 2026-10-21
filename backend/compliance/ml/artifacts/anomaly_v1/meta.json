@@ -1,0 +1,54 @@
+{
+  "name": "anomaly_v1",
+  "created_at": "2026-10-20T13:51:22+00:00",
+  "model": "ocsvm",
+  "mode": "personal",
+  "feature_set": "common",
+  "features": [
+    "activity_events",
+    "login_events",
+    "logins_after_hours",
+    "logins_weekend",
+    "distinct_hosts",
+    "after_hours_events",
+    "exfil_events",
+    "removable_media_events"
+  ],
+  "alert_rate": 0.01,
+  "unusual_pct": 60,
+  "calibration": {
+    "lo": -2.1252194536798346,
+    "thr": 1.2309528504796226,
+    "hi": 4.58091070525688,
+    "alert_rate": 0.01
+  },
+  "trained_rows": 208167,
+  "trained_users": 1000,
+  "split": {
+    "train_end": "2010-10-29",
+    "valid_end": "2011-01-12",
+    "first_day": "2010-01-02",
+    "last_day": "2011-05-17"
+  },
+  "evaluation_on_test": {
+    "alerts": 591,
+    "alerts_per_day": 4.69,
+    "roc_auc": 0.7571077098140937,
+    "pr_auc": 0.012633141902217235,
+    "precision": 0.011844331641285956,
+    "recall": 0.02147239263803681,
+    "f1": 0.015267175572519085,
+    "insiders": 17,
+    "insiders_detected": 7,
+    "insider_detection": "7/17"
+  },
+  "features_csv_sha256": "e9d16f7f547e22faad8e3a2c41d53083341d476f8a0283584b0c879eb5587855",
+  "versions": {
+    "python": "3.12.3",
+    "scikit_learn": "1.8.0",
+    "numpy": "2.4.3",
+    "joblib": "1.5.3"
+  },
+  "random_state": 42,
+  "note": "Load with scorer.AnomalyScorer.load(<this folder>). Retrain if scikit-learn major version changes."
+}

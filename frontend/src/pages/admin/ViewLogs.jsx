@@ -3,21 +3,6 @@ import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
 
-function getMockLogs() {
-  return [
-    { id: 1, user_id: 'u_hassan', action: 'EXPORT', resource_accessed: 'patient_records', resource_sensitivity: 'HIGH', ip_address: '192.168.1.10', timestamp: '2025-06-12 09:42:00', purpose: 'Research' },
-    { id: 2, user_id: 'u_ayesha', action: 'READ', resource_accessed: 'financial_reports', resource_sensitivity: 'HIGH', ip_address: '192.168.1.22', timestamp: '2025-06-12 02:17:00', purpose: null },
-    { id: 3, user_id: 'u_tariq', action: 'DELETE', resource_accessed: 'user_profiles', resource_sensitivity: 'MEDIUM', ip_address: '192.168.1.35', timestamp: '2025-06-11 14:30:00', purpose: 'Cleanup' },
-    { id: 4, user_id: 'u_zara', action: 'READ', resource_accessed: 'biometric_data', resource_sensitivity: 'HIGH', ip_address: '192.168.1.41', timestamp: '2025-06-11 11:15:00', purpose: null },
-    { id: 5, user_id: 'u_bilal', action: 'WRITE', resource_accessed: 'employee_records', resource_sensitivity: 'MEDIUM', ip_address: '192.168.1.18', timestamp: '2025-06-10 16:20:00', purpose: 'Update' },
-    { id: 6, user_id: 'u_nadia', action: 'EXPORT', resource_accessed: 'customer_data', resource_sensitivity: 'HIGH', ip_address: '192.168.1.55', timestamp: '2025-06-10 09:00:00', purpose: 'Audit' },
-    { id: 7, user_id: 'u_omar', action: 'READ', resource_accessed: 'health_records', resource_sensitivity: 'HIGH', ip_address: '192.168.1.62', timestamp: '2025-06-09 22:45:00', purpose: null },
-    { id: 8, user_id: 'u_hassan', action: 'DELETE', resource_accessed: 'payment_data', resource_sensitivity: 'HIGH', ip_address: '192.168.1.10', timestamp: '2025-06-09 10:30:00', purpose: 'GDPR Request' },
-    { id: 9, user_id: 'u_sara', action: 'READ', resource_accessed: 'audit_logs', resource_sensitivity: 'LOW', ip_address: '192.168.1.77', timestamp: '2025-06-08 14:00:00', purpose: 'Compliance' },
-    { id: 10, user_id: 'u_tariq', action: 'WRITE', resource_accessed: 'criminal_records', resource_sensitivity: 'HIGH', ip_address: '192.168.1.35', timestamp: '2025-06-08 08:15:00', purpose: null },
-  ]
-}
-
 const sensitivityColor = {
   HIGH: { bg: '#fff0f0', text: '#e53e3e' },
   MEDIUM: { bg: '#fff8e1', text: '#dd6b20' },
@@ -41,11 +26,22 @@ export default function ViewLogs() {
     dateTo: ''
   })
   const [expanded, setExpanded] = useState(null)
+  const [error, setError] = useState('')
+  const [checkedAt, setCheckedAt] = useState(null)
 
   useEffect(() => {
-    api.get(`/logs/`)
-      .then(r => setLogs(r.data))
-      .catch(() => setLogs(getMockLogs()))
+    function load() {
+      api.get('/logs/')
+        .then(response => {
+          setLogs(response.data)
+          setCheckedAt(new Date())
+          setError('')
+        })
+        .catch(() => setError('Could not load logs.'))
+    }
+    load()
+    const interval = setInterval(load, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   const filtered = logs.filter(log => {
@@ -72,9 +68,11 @@ export default function ViewLogs() {
             View All Logs
           </h1>
           <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
-            {filtered.length} of {logs.length} logs shown.
+            {filtered.length} of {logs.length} logs shown
+            {checkedAt ? ` · live, checked ${checkedAt.toLocaleTimeString()}` : ''}
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* Filters */}
         <div style={{

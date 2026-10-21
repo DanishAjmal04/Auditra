@@ -7,37 +7,16 @@ import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
 
-function getMockData() {
-  return {
-    total_users: 12,
-    active_rules: 20,
-    total_logs: 8400,
-    total_violations: 32,
-    compliance_score: 74,
-    by_article: [
-      { article: 'Art. 5', count: 8 },
-      { article: 'Art. 6', count: 5 },
-      { article: 'Art. 25', count: 6 },
-      { article: 'Art. 32', count: 7 },
-      { article: 'Art. 33', count: 4 },
-    ],
-    recent_users: [
-      { id: 1, name: 'Sara Ahmed', email: 'sara@auditra.com', role: 'Compliance Officer', status: 'ACTIVE' },
-      { id: 2, name: 'Ali Raza', email: 'ali@auditra.com', role: 'Compliance Officer', status: 'ACTIVE' },
-      { id: 3, name: 'Maria Khan', email: 'maria@auditra.com', role: 'Compliance Officer', status: 'INACTIVE' },
-    ]
-  }
-}
-
 const articleColors = ['#e53e3e', '#dd6b20', '#d69e2e', '#38a169', '#3182ce']
 
 export default function AdminDashboard() {
   const [data, setData] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    api.get(`/admin/stats/`)
-      .then(r => setData(r.data))
-      .catch(() => setData(getMockData()))
+    api.get('/admin/stats/')
+      .then(response => setData(response.data))
+      .catch(() => setError('Could not load admin statistics.'))
   }, [])
 
   return (
@@ -54,6 +33,7 @@ export default function AdminDashboard() {
             System overview and management.
           </p>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {data && (
           <>

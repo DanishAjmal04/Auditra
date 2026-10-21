@@ -5,72 +5,46 @@ import {
 } from 'recharts'
 import Sidebar from '../components/Sidebar'
 import AlertBanner from '../components/AlertBanner'
-import api from '../utils/axios'
-
-
-function getMockData() {
-  return {
-    compliance_score: 74,
-    total_violations: 32,
-    critical_open: 4,
-    high_open: 8,
-    resolved: 18,
-    generated_at: new Date().toLocaleString(),
-    by_article: [
-      { article: 'Art. 5', count: 8 },
-      { article: 'Art. 6', count: 5 },
-      { article: 'Art. 25', count: 6 },
-      { article: 'Art. 32', count: 7 },
-      { article: 'Art. 33', count: 4 },
-      { article: 'Art. 17', count: 2 },
-    ],
-    recent_critical: [
-      { id: 1, user: 'u_hassan', article: 'Art. 5', reason: 'Bulk export of personal records', risk: 0.92, date: '2025-06-12' },
-      { id: 2, user: 'u_ayesha', article: 'Art. 32', reason: 'After-hours sensitive data access', risk: 0.88, date: '2025-06-11' },
-      { id: 3, user: 'u_tariq', article: 'Art. 25', reason: 'Role-based access violation', risk: 0.76, date: '2025-06-10' },
-      { id: 4, user: 'u_zara', article: 'Art. 6', reason: 'Missing lawful basis', risk: 0.71, date: '2025-06-09' },
-    ]
-  }
-}
+import api, { downloadAuthenticated } from '../utils/axios'
 
 const articleColors = ['#e53e3e', '#dd6b20', '#d69e2e', '#38a169', '#3182ce', '#805ad5']
+
 
 export default function Reports() {
   const [data, setData] = useState(null)
   const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
+  const [error, setError] = useState('')
+
+  function loadReport() {
+    return api.get('/reports/')
+      .then(r => {
+        setData(r.data)
+        setError('')
+      })
+      .catch(() => {
+        setData(null)
+        setError('Could not load the compliance report.')
+      })
+  }
 
   useEffect(() => {
-    api.get(`/stats/`)
-      .then(r => {
-        setData({
-          compliance_score: r.data.compliance_score,
-          total_violations: r.data.total_violations,
-          critical_open: r.data.critical_open || 4,
-          high_open: r.data.high_open || 8,
-          resolved: r.data.resolved || 18,
-          generated_at: new Date().toLocaleString(),
-          by_article: r.data.by_article?.map(a => ({
-            article: a.rule__gdpr_article,
-            count: a.count
-          })) || [],
-          recent_critical: []
-        })
-      })
-      .catch(() => setData(getMockData()))
+    loadReport()
   }, [])
 
   async function handleGenerate() {
     setGenerating(true)
-    await new Promise(r => setTimeout(r, 1500))
-    setData(prev => ({ ...prev, generated_at: new Date().toLocaleString() }))
+    await loadReport()
     setGenerating(false)
-    setGenerated(true)
   }
 
-  function handleDownload() {
-  window.open('http://127.0.0.1:8000/api/generate-pdf/', '_blank')
-}
+  async function handleDownload() {
+    try {
+      await downloadAuthenticated('/generate-pdf/', 'auditra-report.pdf')
+      setError('')
+    } catch {
+      setError('Could not download the PDF. Sign in again if this keeps happening.')
+    }
+  }
 
   const scoreColor = data?.compliance_score >= 80
     ? '#38a169'
@@ -135,25 +109,15 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Generated Alert */}
-        {generated && (
-          <div style={{
-            background: '#f0fff4',
-            border: '1px solid #9ae6b4',
-            borderRadius: 10,
-            padding: '12px 18px',
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10
-          }}>
-            <span style={{ fontSize: 18 }}>✅</span>
-            <p style={{ margin: 0, fontSize: 14, color: '#276749', fontWeight: 500 }}>
-              Report generated at {data?.generated_at}. Click Download to save.
-            </p>
-          </div>
+        {error && (
+          <p style={{ color: '#e53e3e', marginBottom: 16 }}>{error}</p>
         )}
 
+        {data && (
+          <p style={{ fontSize: 13, color: '#666', marginTop: -16, marginBottom: 20 }}>
+            Report generated at {data.generated_at}.
+          </p>
+        )}
         {data && (
           <>
             {/* Summary Cards */}
