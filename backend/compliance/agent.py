@@ -62,6 +62,7 @@ if SERVER.endswith('/api/ingest'):
     SERVER = SERVER[: -len('/api/ingest')]
 ENROLMENT_KEY = os.environ.get('AUDITRA_ENROLMENT_KEY', os.environ.get('AUDITRA_INGEST_KEY', 'auditra-ingest-dev-key'))
 INTERVAL = int(os.environ.get('AUDITRA_INTERVAL', '5'))
+VERBOSE = os.environ.get('AUDITRA_VERBOSE', '') not in ('', '0')
 MACHINE = socket.gethostname()
 STATE_PATH = Path(__file__).resolve().parent / 'agent_state.json'
 NS = '{http://schemas.microsoft.com/win/2004/08/events/event}'
@@ -762,6 +763,10 @@ class Agent:
                 self.health[collector.name] = f'error: {str(exc)[:120]}'
                 log(f'  {collector.name}: {exc}')
 
+        if events and VERBOSE:
+            for event in events:
+                target = event.get('path') or event.get('domain') or event.get('device') or ''
+                log(f'  > {event["type"]:<20} {event["account"]:<28} {target}')
         if events:
             for start in range(0, len(events), 400):
                 result = self.server.post('/api/agent/events/', {'events': events[start:start + 400]})

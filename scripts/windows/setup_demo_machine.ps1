@@ -66,7 +66,10 @@ $files = @{
     'HR\performance_reviews.csv'          = "employee_code,year,rating,notes`nE-1001,2025,3,Meets expectations`nE-1002,2025,4,Exceeds expectations`n"
     'Medical\patient_records.csv'         = "patient_id,name,diagnosis,medication`nP-201,Usman Tariq,Type 2 diabetes,Metformin`nP-202,Hina Raza,Asthma,Salbutamol`n"
     'Legal\criminal_record_checks.csv'    = "candidate,cnic,check_date,result`nKamran Ali,35202-1111111-1,2026-09-14,Conviction 2019 (theft)`n"
-    'Customers\ali_khan_profile.csv'      = "customer_id,name,phone,email,address`nC-501,Ali Khan,0300-1234567,ali.khan@example.com,House 12 Street 4 Lahore`n"
+    'Customers\leads_1.csv'               = "lead_id,name,phone`nL-1,Ahmed Raza,0301-1112223`n"
+    'Customers\leads_2.csv'               = "lead_id,name,phone`nL-2,Nida Aslam,0302-2223334`n"
+    'Customers\leads_3.csv'               = "lead_id,name,phone`nL-3,Omar Farooq,0303-3334445`n"
+    'Customers\ali_khan_profile.csv'      ="customer_id,name,phone,email,address`nC-501,Ali Khan,0300-1234567,ali.khan@example.com,House 12 Street 4 Lahore`n"
     'Customers\fatima_noor_profile.csv'   = "customer_id,name,phone,email,address`nC-502,Fatima Noor,0321-7654321,fatima.noor@example.com,Flat 3 Block B Karachi`n"
     'Biometrics\fingerprint_enrolment.csv'= "employee_code,template_hash,enrolled_at`nE-1001,9f2c...a71b,2026-01-10`n"
 }

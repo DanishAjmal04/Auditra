@@ -9,7 +9,7 @@ from .ai import ALERT_SCORE
 from .detection.context import who
 from .models import Incident, IncidentAction, Rule, SEVERITY_RANK
 
-ORG_LEVEL_CODES = {'dpo_missing', 'dsr_overdue', 'portability_denied', 'breach_not_reported',
+ORG_LEVEL_CODES = {'dpo_missing', 'retention_exceeded', 'dsr_overdue', 'portability_denied', 'breach_not_reported',
                    'subjects_not_notified', 'automated_decision'}
 WINDOW_MERGE_MINUTES = 30
 

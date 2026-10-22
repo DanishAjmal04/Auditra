@@ -51,12 +51,20 @@ The login accounts come from `create_default_users`. Change their passwords unde
    ```powershell
    cd backend; python -m compliance.agent
    ```
+   For a rehearsal, set `$env:AUDITRA_VERBOSE="1"` first: the window then prints every structured event before sending it.
 4. **Laptop A:** open `http://<laptop-B-ip>:5173` and sign in.
 5. **Configure the organisation live, as admin.** This is real configuration, not seed data.
    - **Data Catalogue:** add `C:\AuditraCompany\Finance` (FINANCIAL, MEDIUM), `Payroll` (FINANCIAL, HIGH), `HR` (HR_EMPLOYEE, HIGH), `HR\employees_cnic.csv` (NATIONAL_ID, HIGH), `Medical` (HEALTH, HIGH), `Legal` (CRIMINAL, HIGH), `Customers` (CUSTOMER, MEDIUM) and `Biometrics` (BIOMETRIC, HIGH). Link each one to a processing activity, which you create in GDPR Records > Processing.
    - **Employees & Access:** add Bilal Ahmed, Finance, Staff, shift 09:00–18:00, up to MEDIUM, categories FINANCIAL and CUSTOMER. Link the account `MACBOOK\bilal`, or use *Accounts seen by agents* once he has logged on.
    - **GDPR Records:** add the data subject Ali Khan with the path `C:\AuditraCompany\Customers\ali_khan_profile.csv`, a consent record, and the DPO.
    - Admin > Agents & Health shows the agent online with each collector's status.
+
+Before the presentation, check three things:
+- Bilal's shift covers the presentation time, or scene 2 is a HIGH violation, not a LOW indicator.
+- Bilal signs in with a password, not a Windows Hello PIN, so scene 9 produces failed-logon events.
+- Laptop B is set to never sleep while plugged in.
+
+Sign in on laptop A as **admin**: the admin sees every officer page and can also change shifts and consent live.
 
 ### Scenes (do them on laptop B as `bilal`; laptop A shows each within about 10 seconds)
 
@@ -66,9 +74,9 @@ The login accounts come from `create_default_users`. Change their passwords unde
 | 2 | Plugs in a USB stick during the shift | A LOW risk indicator (Art. 32) |
 | 3 | Opens `Payroll\salaries_2026.csv` | **Art. 25**, access beyond his role |
 | 4 | Opens `Medical\patient_records.csv` | **Art. 9**, special-category data, CRITICAL |
-| 5 | The officer sets Bilal's shift to end now, then Bilal copies `HR\employees_cnic.csv` to the USB stick | **Art. 32, 5(1)(f), 87, 25**, CRITICAL, with the score breakdown and the AI points |
+| 5 | On laptop A, signed in as admin, open Employees & Access and set Bilal's shift to end now. Bilal then copies `HR\employees_cnic.csv` to the USB stick | **Art. 32, 5(1)(f), 87, 25**, CRITICAL, with the score breakdown and the AI points |
 | 6 | Opens `Customers\ali_khan_profile.csv` after the officer withdraws Ali's consent | **Art. 7**, CRITICAL |
-| 7 | Deletes 3 files in `Customers` | **Mass deletion**, Art. 32 and 5(1)(f) |
+| 7 | Deletes `leads_1.csv`, `leads_2.csv` and `leads_3.csv` in `Customers` (run the setup script again to restore them) | **Mass deletion**, Art. 32 and 5(1)(f) |
 | 8 | Opens wetransfer.com after scene 6 | Possible upload of personal data, Art. 32 and 5 |
 | 9 | Locks with Win+L and types a wrong password 5 times, then the right one | **Brute force**, Art. 32. A 6th wrong password instead locks the account for 5 minutes (lockout indicator). |
 | 10 | Prints `Customers\fatima_noor_profile.csv` to "Microsoft Print to PDF" | Print indicator |
