@@ -1,125 +1,130 @@
-import numpy as np
+from datetime import datetime, timedelta
+from pathlib import Path
+
 import pandas as pd
-from sklearn.ensemble import IsolationForest
+from django.db.models import Q
 from django.utils import timezone
 
+from .ml.auditra_features import common_features_from_events
+from .ml.scorer import AnomalyScorer
 
-def extract_features(logs):
-    data = []
-    for log in logs:
-        hour = log.timestamp.hour
-        is_outside = 1 if log.is_outside_hours else 0
-        sensitivity = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}.get(log.resource_sensitivity, 0)
-        action = {'LOGIN': 0, 'LOGOUT': 1, 'READ': 2, 'WRITE': 3, 'DELETE': 4, 'EXPORT': 5}.get(log.action, 0)
-        has_purpose = 0 if not log.purpose else 1
-        is_special = 1 if log.resource_accessed in SPECIAL_CATEGORY else 0
-        is_criminal = 1 if log.resource_accessed in CRIMINAL else 0
-
-        data.append([
-            hour,
-            is_outside,
-            sensitivity,
-            action,
-            has_purpose,
-            is_special,
-            is_criminal
-        ])
-
-    return np.array(data)
+ARTIFACT_DIR = Path(__file__).resolve().parent / 'ml' / 'artifacts' / 'anomaly_v1'
+MIN_LOGS_FOR_BATCH = 10
+MIN_LOGS_FOR_USER = 5
+_SCORER = None
 
 
-SPECIAL_CATEGORY = [
-    'health_records', 'biometric_data', 'genetic_data',
-    'patient_records', 'mental_health_records', 'racial_data',
-    'ethnic_data', 'religious_data', 'political_data'
-]
+def get_scorer():
+    global _SCORER
+    if _SCORER is None:
+        _SCORER = AnomalyScorer.load(ARTIFACT_DIR)
+    return _SCORER
 
-CRIMINAL = [
-    'criminal_records', 'offence_data', 'conviction_records'
-]
+
+def _events_frame(logs):
+    return pd.DataFrame({
+        'user_id': [log.user_id for log in logs],
+        'timestamp': [log.timestamp for log in logs],
+        'action': [log.action for log in logs],
+        'resource_accessed': [log.resource_accessed for log in logs],
+        'ip_address': [log.ip_address for log in logs],
+    })
+
+
+def _day_bounds(day_str):
+    start = timezone.make_aware(datetime.strptime(day_str, '%Y-%m-%d'))
+    return start, start + timedelta(days=1)
+
+
+def _representative_log(user_id, day_str):
+    from .models import Log
+
+    start, end = _day_bounds(day_str)
+    qs = Log.objects.filter(
+        user_id=user_id,
+        timestamp__gte=start,
+        timestamp__lt=end,
+    )
+    preferred = qs.filter(
+        Q(action='EXPORT') | Q(resource_accessed='removable_media')
+    ).order_by('timestamp').first()
+    return preferred or qs.order_by('timestamp').first()
+
+
+def _score_logs(logs):
+    if not logs:
+        return None
+    frame = common_features_from_events(_events_frame(logs))
+    if frame.empty:
+        return None
+    return get_scorer().score_frame(frame, explain=True)
 
 
 def run_anomaly_detection():
-    from .models import Log, Violation, Rule
+    from .models import Log, Rule, Violation
 
-    logs = list(Log.objects.all().order_by('-timestamp')[:500])
-
-    if len(logs) < 10:
+    logs = list(Log.objects.order_by('-timestamp')[:5000])
+    if len(logs) < MIN_LOGS_FOR_BATCH:
         return 0
 
-    features = extract_features(logs)
+    scored = _score_logs(logs)
+    if scored is None:
+        return 0
 
-    model = IsolationForest(
-        n_estimators=100,
-        contamination=0.1,
-        random_state=42
-    )
-    model.fit(features)
+    rule = Rule.objects.filter(gdpr_article='ML-ANOMALY', enabled=True).first()
+    if rule is None:
+        return 0
 
-    predictions = model.predict(features)
-    scores = model.decision_function(features)
-
-    try:
-        anomaly_rule = Rule.objects.get(gdpr_article='Art. 5', enabled=True)
-    except Rule.DoesNotExist:
-        anomaly_rule = None
-
-    anomaly_count = 0
-
-    for i, log in enumerate(logs):
-        if predictions[i] == -1:
-            raw_score = scores[i]
-            normalized = round(1 - (raw_score + 0.5), 2)
-            normalized = max(0.0, min(1.0, normalized))
-
-            already_flagged = Violation.objects.filter(
-                log=log,
-                is_anomaly=True
-            ).exists()
-
-            if not already_flagged and anomaly_rule:
-                Violation.objects.create(
-                    log=log,
-                    rule=anomaly_rule,
-                    reason=f"AI anomaly detected — unusual access pattern for {log.user_id} on {log.resource_accessed}",
-                    risk_score=normalized,
-                    is_anomaly=True,
-                    status='OPEN'
-                )
-                anomaly_count += 1
-
-    return anomaly_count
+    created_count = 0
+    unusual = scored[scored['is_unusual']]
+    for row in unusual.itertuples(index=False):
+        log = _representative_log(row.user, row.day)
+        if log is None:
+            continue
+        pct = float(row.anomaly_pct)
+        reason = (
+            f'Unusual activity on {row.day} ({pct:.0f}/100). {row.reason}'
+        )
+        _, created = Violation.objects.get_or_create(
+            log=log,
+            rule=rule,
+            defaults={
+                'reason': reason,
+                'risk_score': round(pct / 100.0, 4),
+                'is_anomaly': True,
+                'status': 'OPEN',
+            },
+        )
+        if created:
+            created_count += 1
+    return created_count
 
 
 def get_user_anomaly_score(user_id):
     from .models import Log
 
-    logs = list(Log.objects.filter(user_id=user_id).order_by('-timestamp')[:100])
-
-    if len(logs) < 5:
+    logs = list(
+        Log.objects.filter(user_id=user_id).order_by('-timestamp')[:2000]
+    )
+    if len(logs) < MIN_LOGS_FOR_USER:
         return None
 
-    features = extract_features(logs)
+    scored = _score_logs(logs)
+    if scored is None or scored.empty:
+        return None
 
-    model = IsolationForest(
-        n_estimators=100,
-        contamination=0.1,
-        random_state=42
-    )
-    model.fit(features)
-
-    scores = model.decision_function(features)
-    avg_score = float(np.mean(scores))
-    normalized = round(1 - (avg_score + 0.5), 2)
-    normalized = max(0.0, min(1.0, normalized))
-
-    predictions = model.predict(features)
-    anomaly_flags = int(np.sum(predictions == -1))
-
+    scored = scored.sort_values('day')
+    unusual = scored[scored['is_unusual']]
+    focus = unusual.sort_values('anomaly_pct').iloc[-1] if len(unusual) else scored.iloc[-1]
+    unusual_days = int(len(unusual))
+    pct = float(focus['anomaly_pct'])
     return {
         'user_id': user_id,
-        'anomaly_score': normalized,
-        'anomaly_flags': anomaly_flags,
+        'anomaly_score': round(pct / 100.0, 4),
+        'anomaly_pct': round(pct, 1),
+        'anomaly_flags': unusual_days,
         'total_logs': len(logs),
-        'is_anomalous': normalized > 0.6
+        'is_anomalous': unusual_days > 0,
+        'reason': str(focus['reason']),
+        'day': str(focus['day']),
     }

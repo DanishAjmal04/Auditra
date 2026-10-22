@@ -1,13 +1,41 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'auditra-secret-key-2026-change-in-production'
 
-DEBUG = True
+def _load_env_file(path):
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
-ALLOWED_HOSTS = ['*']
+
+_load_env_file(BASE_DIR.parent / '.env')
+_load_env_file(BASE_DIR / '.env')
+
+
+def _env_bool(name, default):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in ('1', 'true', 'yes')
+
+
+SECRET_KEY = os.getenv('SECRET_KEY', 'auditra-secret-key-2026-change-in-production')
+
+DEBUG = _env_bool('DEBUG', True)
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv('ALLOWED_HOSTS', '*').split(',')
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -54,16 +82,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'auditra.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'auditra_db',
-        'USER': 'auditra_user',
-        'PASSWORD': 'auditra123',
-        'HOST': 'localhost',
-        'PORT': '5432',
+if os.getenv('DB_ENGINE', 'postgresql') == 'sqlite':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.getenv('DB_NAME', str(BASE_DIR / 'db.sqlite3')),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'auditra_db'),
+            'USER': os.getenv('DB_USER', 'auditra_user'),
+            'PASSWORD': os.getenv('DB_PASSWORD', 'auditra123'),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -81,8 +117,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS — React frontend allow karo
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 
 # REST Framework
 REST_FRAMEWORK = {
@@ -93,8 +128,6 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
 }
-from datetime import timedelta
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -126,3 +159,7 @@ COMPLIANCE_ALERT_RECIPIENTS = [
     for email in os.getenv('COMPLIANCE_ALERT_RECIPIENTS', '').split(',')
     if email.strip()
 ]
+
+# Shared secret for the Windows agent and demo replay. Dev default keeps
+# a local presentation working without extra setup.
+INGEST_API_KEY = os.getenv('INGEST_API_KEY', 'auditra-ingest-dev-key')

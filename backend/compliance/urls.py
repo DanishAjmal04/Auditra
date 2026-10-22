@@ -92,6 +92,12 @@ urlpatterns = [
     ),
 
     path(
+        'consent-records/<uuid:pk>/',
+        views.consent_record_update,
+        name='consent-record-update'
+    ),
+
+    path(
         'dpo/',
         views.dpo_designation,
         name='dpo-designation'
@@ -130,6 +136,12 @@ urlpatterns = [
         'subject-access-requests/',
         views.subject_access_requests,
         name='subject-access-requests'
+    ),
+
+    path(
+        'subject-access-requests/<uuid:pk>/',
+        views.subject_access_request_update,
+        name='subject-access-request-update'
     ),
 
 

@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework.permissions import BasePermission
 
 class IsAdminUser(BasePermission):
@@ -23,3 +24,21 @@ class IsAdminOrComplianceOfficer(BasePermission):
             request.user.is_authenticated and
             request.user.role in ['admin', 'compliance_officer']
         )
+
+
+class IsIngestClient(BasePermission):
+    """Officer/admin JWT, or the shared ingest key used by the Windows agent."""
+
+    message = 'A compliance JWT or a valid X-Auditra-Ingest-Key is required.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        if (
+            user
+            and user.is_authenticated
+            and getattr(user, 'role', None) in ('admin', 'compliance_officer')
+        ):
+            return True
+        expected = getattr(settings, 'INGEST_API_KEY', '')
+        provided = request.headers.get('X-Auditra-Ingest-Key', '')
+        return bool(expected) and provided == expected

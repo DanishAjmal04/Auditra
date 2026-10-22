@@ -3,48 +3,24 @@ import Sidebar from '../../components/Sidebar'
 import api from '../../utils/axios'
 
 
-function getMockHealth() {
-  return {
-    total_logs: 8421,
-    total_violations: 32,
-    total_rules: 13,
-    active_rules: 11,
-    db_size: '142 MB',
-    api_response_ms: 87,
-    last_engine_run: '2025-06-12 09:45:00',
-    last_simulation: '2025-06-12 08:30:00',
-    uptime: '99.8%',
-    engine_status: 'RUNNING',
-    db_status: 'HEALTHY',
-    api_status: 'HEALTHY',
-    last_job: {
-      trigger: 'SCHEDULED',
-      logs_processed: 125,
-      violations_created: 3,
-      anomalies_flagged: 1,
-      notifications_sent: 2,
-      notifications_failed: 0,
-      error_message: '',
-    },
-  }
-}
-
 export default function SystemHealth() {
   const [health, setHealth] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(new Date().toLocaleTimeString())
+  const [error, setError] = useState('')
 
   function fetchHealth() {
     setRefreshing(true)
-    api.get(`/admin/health/`)
-      .then(r => {
-        setHealth(r.data)
+    api.get('/admin/health/')
+      .then(response => {
+        setHealth(response.data)
+        setError('')
         setLastRefresh(new Date().toLocaleTimeString())
         setRefreshing(false)
       })
       .catch(() => {
-        setHealth(getMockHealth())
-        setLastRefresh(new Date().toLocaleTimeString())
+        setHealth(null)
+        setError('Could not load system health.')
         setRefreshing(false)
       })
   }
@@ -96,6 +72,7 @@ export default function SystemHealth() {
             <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
               Last refreshed at {lastRefresh}
             </p>
+            {error && <p style={{ color: '#e53e3e', margin: '8px 0 0' }}>{error}</p>}
           </div>
           <button
             onClick={fetchHealth}

@@ -1,12 +1,6 @@
 from django.utils import timezone
 from datetime import timedelta
 
-WINDOWS_SYSTEM_USERS = [
-    'system', 'local service', 'network service',
-    'anonymous logon', 'window manager', 'dwm-',
-    'umfd-', '-', 'unknown'
-]
-
 WINDOWS_SYSTEM_RESOURCES = [
     'security_logs', 'system_logs',
     'application_logs', 'powershell_logs',
@@ -40,6 +34,7 @@ AUTOMATED_RESOURCES = [
 
 ROLE_SENSITIVITY_MAP = {
     'INTERN': ['LOW'],
+    'STAFF': ['LOW', 'MEDIUM'],
     'HR': ['LOW', 'MEDIUM'],
     'ANALYST': ['LOW', 'MEDIUM', 'HIGH'],
     'MANAGER': ['LOW', 'MEDIUM', 'HIGH'],
@@ -59,10 +54,14 @@ USERS_ROLES = {
 
 
 def is_windows_system_event(log):
-    user_lower = log.user_id.lower()
-    for sys_user in WINDOWS_SYSTEM_USERS:
-        if sys_user in user_lower:
-            return True
+    username = log.user_id.lower().replace('/', '\\').split('\\')[-1]
+    if username in (
+        '-', 'system', 'local service', 'network service',
+        'anonymous logon', 'window manager', 'unknown',
+    ):
+        return True
+    if username.startswith(('dwm-', 'umfd-')):
+        return True
     if log.resource_accessed in WINDOWS_SYSTEM_RESOURCES:
         return True
     return False
@@ -71,23 +70,27 @@ def is_windows_system_event(log):
 def get_user_role(user_id):
     if user_id in USERS_ROLES:
         return USERS_ROLES[user_id]
-    if '\\' in user_id:
-        username = user_id.split('\\')[-1].lower()
-        if username in ['admin', 'administrator']:
+    if '\\' in user_id or '/' in user_id:
+        username = user_id.replace('/', '\\').split('\\')[-1].lower()
+        if username in ('admin', 'administrator'):
             return 'MANAGER'
-        if username in ['system', 'local service', 'network service']:
+        if username in ('system', 'local service', 'network service'):
             return 'AUDITOR'
+        # A domain or machine account is not one of the seeded analysts.
+        # HIGH resources are outside this role, so Art. 25 can fire.
+        return 'STAFF'
     return 'ANALYST'
 
 
 def get_risk_score(severity):
+    """Fixed score for a rule severity. Anomaly rows use the model score instead."""
     scores = {
-        'CRITICAL': round(0.85 + 0.15 * __import__('random').random(), 2),
-        'HIGH': round(0.65 + 0.20 * __import__('random').random(), 2),
-        'MEDIUM': round(0.40 + 0.25 * __import__('random').random(), 2),
-        'LOW': round(0.10 + 0.30 * __import__('random').random(), 2),
+        'CRITICAL': 0.95,
+        'HIGH': 0.75,
+        'MEDIUM': 0.50,
+        'LOW': 0.25,
     }
-    return scores.get(severity, 0.5)
+    return scores.get(severity, 0.50)
 
 
 def create_violation(log, rule, reason):
@@ -212,6 +215,7 @@ def check_all_rules(log):
             if not rule:
                 continue
             overdue = DataSubjectRequest.objects.filter(
+                subject_id=log.user_id,
                 right_type=right_type,
                 status__in=['PENDING', 'IN_PROGRESS'],
                 response_deadline__lt=timezone.now()
@@ -297,37 +301,6 @@ def check_all_rules(log):
             )
             violations.append(v)
 
-    # Art. 33 — Breach not reported in 72 hours
-    rule = get_rule('Art. 33')
-    if rule:
-        from .models import BreachRecord
-        overdue_breaches = BreachRecord.objects.filter(
-            notification_sent=False,
-            notification_deadline__lt=timezone.now()
-        )
-        if overdue_breaches.exists():
-            v = create_violation(
-                log, rule,
-                f"Data breach not reported to supervisory authority within 72 hours"
-            )
-            violations.append(v)
-
-    # Art. 34 — Data subjects not notified
-    rule = get_rule('Art. 34')
-    if rule:
-        from .models import BreachRecord
-        high_breaches = BreachRecord.objects.filter(
-            notification_sent=False,
-            severity__in=['HIGH', 'CRITICAL'],
-            notification_deadline__lt=timezone.now()
-        )
-        if high_breaches.exists():
-            v = create_violation(
-                log, rule,
-                f"High risk breach — affected data subjects not notified"
-            )
-            violations.append(v)
-
     # Art. 37 — No DPO
     rule = get_rule('Art. 37')
     if rule:
@@ -386,3 +359,38 @@ def check_all_rules(log):
             violations.append(v)
 
     return violations
+
+
+def check_overdue_breaches():
+    """One open violation per overdue breach, attached to the breach's own log.
+
+    Art. 33 and Art. 34 are organisational deadlines. They must not be copied
+    onto every unrelated access event.
+    """
+    from .models import BreachRecord
+
+    created = []
+    now = timezone.now()
+    overdue = BreachRecord.objects.filter(
+        notification_sent=False,
+        notification_deadline__lt=now,
+    ).select_related('violation__log')
+
+    rule_33 = get_rule('Art. 33')
+    rule_34 = get_rule('Art. 34')
+
+    for breach in overdue:
+        source_log = breach.violation.log
+        if rule_33:
+            created.append(create_violation(
+                source_log,
+                rule_33,
+                f"Data breach {breach.id} not reported to the supervisory authority within 72 hours",
+            ))
+        if rule_34 and breach.severity in ('HIGH', 'CRITICAL'):
+            created.append(create_violation(
+                source_log,
+                rule_34,
+                f"High risk breach {breach.id} — affected data subjects not notified",
+            ))
+    return created

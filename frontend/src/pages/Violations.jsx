@@ -10,12 +10,25 @@ const statusColor = { OPEN: '#e53e3e', REVIEWING: '#d69e2e', RESOLVED: '#38a169'
 export default function Violations() {
   const [violations, setViolations] = useState([])
   const [filter, setFilter] = useState('')
+  const [anomalyOnly, setAnomalyOnly] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => { fetchViolations() }, [filter])
+  useEffect(() => { fetchViolations() }, [filter, anomalyOnly])
 
   function fetchViolations() {
-    const params = filter ? `?severity=${filter}` : ''
-    api.get(`/violations/${params}`).then(r => setViolations(r.data))
+    const params = new URLSearchParams()
+    if (filter) params.set('severity', filter)
+    if (anomalyOnly) params.set('anomaly', '1')
+    const query = params.toString()
+    api.get(`/violations/${query ? `?${query}` : ''}`)
+      .then(r => {
+        setViolations(r.data)
+        setError('')
+      })
+      .catch(() => {
+        setViolations([])
+        setError('Could not load violations.')
+      })
   }
 
   function updateStatus(id, status) {
@@ -45,7 +58,16 @@ export default function Violations() {
               {s || 'All'}
             </button>
           ))}
+          <button onClick={() => setAnomalyOnly(value => !value)} style={{
+            padding: '6px 16px', borderRadius: 20, border: 'none',
+            background: anomalyOnly ? '#dd6b20' : 'white',
+            color: anomalyOnly ? 'white' : '#666',
+            fontSize: 13, cursor: 'pointer', fontWeight: 600
+          }}>
+            Anomalies
+          </button>
         </div>
+        {error && <p style={{ color: '#e53e3e', marginBottom: 12 }}>{error}</p>}
 
         {/* Table */}
         <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden' }}>
@@ -72,8 +94,8 @@ export default function Violations() {
                   <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500 }}>
                     {v.log.user_id}
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, maxWidth: 200 }}>
-                    {v.explanation}
+                  <td style={{ padding: '12px 16px', fontSize: 13, maxWidth: 280 }}>
+                    {v.reason}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12 }}>
                     <span style={{
@@ -92,7 +114,9 @@ export default function Violations() {
                     padding: '12px 16px', fontSize: 13, fontWeight: 700,
                     color: v.risk_score > 0.8 ? '#e53e3e' : v.risk_score > 0.6 ? '#dd6b20' : '#38a169'
                   }}>
-                    {v.risk_score.toFixed(2)}
+                    {v.is_anomaly
+                      ? `${Math.round(v.risk_score * 100)}`
+                      : v.risk_score.toFixed(2)}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>
                     {v.is_anomaly

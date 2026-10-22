@@ -7,7 +7,7 @@ from django.utils import timezone
 from .anomaly_detector import run_anomaly_detection
 from .models import ComplianceJobRun, Log, Violation
 from .notifications import send_pending_compliance_notifications
-from .rule_engine import check_all_rules
+from .rule_engine import check_all_rules, check_overdue_breaches
 
 
 ADVISORY_LOCK_ID = 412_803_701
@@ -71,6 +71,7 @@ def run_compliance_cycle(trigger='SCHEDULED'):
                 check_all_rules(log)
                 logs_processed += 1
 
+            check_overdue_breaches()
             anomalies_flagged = run_anomaly_detection()
             notifications = send_pending_compliance_notifications()
 

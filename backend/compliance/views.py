@@ -70,7 +70,15 @@ from .permissions import (
     IsAdminUser,
     IsComplianceOfficer,
     IsAdminOrComplianceOfficer,
+    IsIngestClient,
 )
+
+
+def compliance_percent(total_logs, dirty_logs):
+    """Share of logs with no finding. One log with several rules counts once."""
+    if total_logs <= 0:
+        return 100
+    return max(0, min(100, int((1 - dirty_logs / total_logs) * 100)))
 
 
 # ============================================================
@@ -136,11 +144,8 @@ def stats(request):
     ).count()
 
     if total_logs > 0:
-        violation_rate = total_violations / total_logs
-        compliance_score = max(
-            0,
-            int((1 - violation_rate) * 100)
-        )
+        dirty_logs = Violation.objects.values('log_id').distinct().count()
+        compliance_score = compliance_percent(total_logs, dirty_logs)
     else:
         compliance_score = 100
 
@@ -213,6 +218,9 @@ def violations_list(request):
         violations = violations.filter(
             log__user_id=user_id
         )
+
+    if request.GET.get('anomaly') in ('1', 'true', 'yes'):
+        violations = violations.filter(is_anomaly=True)
 
     serializer = ViolationSerializer(
         violations,
@@ -373,10 +381,8 @@ def users_list(request):
 
     users = (
         Log.objects
-        .values_list(
-            'user_id',
-            flat=True
-        )
+        .order_by()
+        .values_list('user_id', flat=True)
         .distinct()
     )
 
@@ -490,9 +496,23 @@ def consent_records(request):
     )
 
 
-# ============================================================
-# DPO DESIGNATION VERIFICATION
-# ============================================================
+@api_view(['PATCH'])
+@permission_classes([IsAdminOrComplianceOfficer])
+def consent_record_update(request, pk):
+    try:
+        record = ConsentRecord.objects.get(pk=pk)
+    except ConsentRecord.DoesNotExist:
+        return Response(
+            {'error': 'Not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if 'is_valid' in request.data:
+        record.is_valid = bool(request.data.get('is_valid'))
+    if 'active_processing' in request.data:
+        record.active_processing = bool(request.data.get('active_processing'))
+    record.save()
+    return Response(ConsentRecordSerializer(record).data)
 
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAdminOrComplianceOfficer])
@@ -659,9 +679,27 @@ def subject_access_requests(request):
     )
 
 
-# ============================================================
-# REPORTS
-# ============================================================
+@api_view(['PATCH'])
+@permission_classes([IsAdminOrComplianceOfficer])
+def subject_access_request_update(request, pk):
+    try:
+        req = DataSubjectRequest.objects.get(pk=pk)
+    except DataSubjectRequest.DoesNotExist:
+        return Response(
+            {'error': 'Not found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    new_status = request.data.get('status')
+    if new_status in ('PENDING', 'IN_PROGRESS', 'COMPLETED'):
+        req.status = new_status
+        req.save()
+        return Response(DataSubjectRequestSerializer(req).data)
+
+    return Response(
+        {'error': 'Invalid status'},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 @api_view(['GET'])
 @permission_classes([IsAdminOrComplianceOfficer])
@@ -686,13 +724,8 @@ def reports(request):
     ).count()
 
     if total_logs > 0:
-        compliance_score = max(
-            0,
-            int(
-                (1 - total_violations / total_logs)
-                * 100
-            )
-        )
+        dirty_logs = Violation.objects.values('log_id').distinct().count()
+        compliance_score = compliance_percent(total_logs, dirty_logs)
     else:
         compliance_score = 100
 
@@ -901,13 +934,8 @@ def admin_stats(request):
     total_violations = Violation.objects.count()
 
     if total_logs > 0:
-        compliance_score = max(
-            0,
-            int(
-                (1 - total_violations / total_logs)
-                * 100
-            )
-        )
+        dirty_logs = Violation.objects.values('log_id').distinct().count()
+        compliance_score = compliance_percent(total_logs, dirty_logs)
     else:
         compliance_score = 100
 
@@ -1158,15 +1186,9 @@ def generate_pdf(request):
     ).count()
 
     compliance_score = (
-        max(
-            0,
-            int(
-                (
-                    1 -
-                    total_violations /
-                    total_logs
-                ) * 100
-            )
+        compliance_percent(
+            total_logs,
+            Violation.objects.values('log_id').distinct().count(),
         )
         if total_logs > 0
         else 100
@@ -1611,7 +1633,7 @@ def generate_pdf(request):
 # ============================================================
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrComplianceOfficer])
+@permission_classes([IsIngestClient])
 def ingest_logs(request):
 
     logs_data = request.data.get(
@@ -1731,8 +1753,7 @@ def ingest_logs(request):
 
             continue
 
-    if len(created_logs) >= 10:
-
+    if Log.objects.count() >= 10:
         run_anomaly_detection()
 
     return Response({
@@ -1811,20 +1832,11 @@ def generate_user_pdf(request, user_id):
     ).count()
 
     if total_logs > 0:
-
-        compliance_score = max(
-            0,
-            int(
-                (
-                    1 -
-                    total_violations /
-                    total_logs
-                ) * 100
-            )
+        compliance_score = compliance_percent(
+            total_logs,
+            violations.values('log_id').distinct().count(),
         )
-
     else:
-
         compliance_score = 100
 
     if (
