@@ -64,6 +64,10 @@ if SERVER.endswith('/api/ingest'):
 ENROLMENT_KEY = os.environ.get('AUDITRA_ENROLMENT_KEY', os.environ.get('AUDITRA_INGEST_KEY', 'auditra-ingest-dev-key'))
 INTERVAL = int(os.environ.get('AUDITRA_INTERVAL', '5'))
 VERBOSE = os.environ.get('AUDITRA_VERBOSE', '') not in ('', '0')
+# The person this laptop is assigned to. Windows does not record who plugs in a USB stick, so device events are
+# given to this account; without it they go to whoever is signed in at the console.
+DEVICE_OWNER = os.environ.get('AUDITRA_DEVICE_OWNER', '').strip()
+SOURCE_READ_WINDOW = 180  # seconds: a copy to USB is attributed to whoever read the source file just before
 MACHINE = socket.gethostname()
 STATE_PATH = Path(__file__).resolve().parent / 'agent_state.json'
 NS = '{http://schemas.microsoft.com/win/2004/08/events/event}'
@@ -159,6 +163,10 @@ def console_account():
     except Exception:
         pass
     return account_of(MACHINE, os.environ.get('USERNAME', 'unknown'))
+
+
+def device_account():
+    return DEVICE_OWNER or console_account()
 
 
 def sid_to_name(sid_text):
@@ -383,6 +391,8 @@ class SecurityCollector:
         user, domain = f.get('SubjectUserName'), f.get('SubjectDomainName')
         if ignored_account(domain, user):
             return None
+        # Remember who last touched this file (Explorer included) so a copy to USB can be attributed to them.
+        self.agent.recent_access[path.lower()] = (account_of(domain, user), time.monotonic())
         process = f.get('ProcessName') or ''
         process_name = process.split('\\')[-1].lower()
         if process_name in BACKGROUND_PROCESSES:
@@ -426,7 +436,7 @@ class UsbCollector:
             out.append({
                 'type': 'USB_CONNECTED',
                 'occurred_at': iso_local(system_time(root)),
-                'account': console_account(),
+                'account': device_account(),
                 'machine': MACHINE,
                 'device': friendly_device(device),
                 'details': {'device_instance': device},
@@ -597,7 +607,7 @@ class UsbCopyCollector:
             self.waiting[path] = time.monotonic()
         out = []
         for path, seen in list(self.waiting.items()):
-            if time.monotonic() - seen < 2:
+            if time.monotonic() - seen < 4:
                 continue
             self.waiting.pop(path)
             try:
@@ -610,10 +620,15 @@ class UsbCopyCollector:
             if not self.reported.fresh((path.lower(), size), 120):
                 continue
             source = self.agent.index.match(name, size)
+            reader = self.agent.recent_access.get(source.lower()) if source else None
+            if reader and time.monotonic() - reader[1] <= SOURCE_READ_WINDOW:
+                account = reader[0]
+            else:
+                account = device_account()
             event = {
                 'type': 'FILE_COPY_TO_USB',
                 'occurred_at': iso_local(datetime.now(dt_timezone.utc)),
-                'account': console_account(),
+                'account': account,
                 'machine': MACHINE,
                 'path': path,
                 'file_name': name,
@@ -717,6 +732,7 @@ class Agent:
         self.index = CatalogueIndex()
         self.collectors = []
         self.health = {}
+        self.recent_access = {}
         self.last_inventory = 0.0
         self.last_index = 0.0
 
@@ -737,6 +753,8 @@ class Agent:
         print(f'  Server  : {SERVER}')
         print(f'  Admin   : {"yes" if admin else "NO - Security log (logons, file access) will not be read"}')
         print(f'  User    : {console_account()}')
+        if DEVICE_OWNER:
+            print(f'  Owner   : {DEVICE_OWNER} (USB plug-ins are attributed to this account)')
         print('=' * 64)
         self.apply_config(self.server.register())
         self.collectors = [UsbCollector(self), UsbCopyCollector(self), PrintCollector(self), WebCollector(self)]

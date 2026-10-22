@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link2, UserCog, UserRoundSearch, X } from 'lucide-react'
-import api, { errorText } from '../../lib/api'
+import { Link2, UserCog, X } from 'lucide-react'
+import api from '../../lib/api'
 import { useLive } from '../../lib/live'
 import { CATEGORIES, DAYS, EMPLOYEE_ROLES, ago } from '../../lib/format'
 import Crud from '../../components/Crud'
-import { Button, Card, CardHeader, Empty, ErrorNote, Modal, PageHeader, Pill, Select } from '../../components/ui'
+import LinkAccountModal from '../../components/LinkAccount'
+import { Button, Card, CardHeader, Empty, PageHeader, Pill } from '../../components/ui'
 
 const DAY_OPTIONS = Object.fromEntries(DAYS.map((d, i) => [i, d]))
 
@@ -27,66 +28,33 @@ function AccountsCell({ row, reload }) {
   )
 }
 
-function Unlinked({ employees, onLinked, version }) {
+function Unlinked({ version, onLink }) {
   const [rows, setRows] = useState([])
-  const [linking, setLinking] = useState(null)
-  const [employee, setEmployee] = useState('')
-  const [error, setError] = useState('')
   useEffect(() => { api.get('/admin/unlinked-accounts/').then((r) => setRows(r.data)) }, [version])
-
-  async function link() {
-    setError('')
-    try {
-      await api.post(`/admin/employees/${employee}/accounts/`, { account: linking.account })
-      setLinking(null)
-      onLinked()
-      api.get('/admin/unlinked-accounts/').then((r) => setRows(r.data))
-    } catch (e) { setError(errorText(e)) }
-  }
 
   return (
     <Card>
-      <CardHeader icon={UserRoundSearch} title="Accounts seen by agents but not linked" subtitle="Link each Windows account to the employee who uses it. Past events follow the link." />
+      <CardHeader title="Accounts seen by agents but not linked" subtitle="Link each Windows account to the employee who uses it. Its activity is then checked against that person's permissions." />
       {rows.length ? (
-        <div className="divide-y divide-line/70">
+        <div className="divide-y divide-line">
           {rows.map((r) => (
-            <div key={`${r.account}-${r.machine}`} className="flex items-center gap-4 px-4 py-2.5 text-sm">
+            <div key={`${r.account}-${r.machine}`} className="flex items-center gap-4 px-5 py-3 text-sm">
               <span className="flex-1 font-mono text-xs">{r.account}</span>
               <span className="text-xs text-ink-3">{r.machine}</span>
               <span className="tabular text-xs text-ink-3">{r.events} events · {ago(r.last_seen)}</span>
-              <Button size="sm" icon={Link2} onClick={() => { setLinking(r); setEmployee(''); setError('') }}>Link</Button>
+              <Button size="sm" icon={Link2} onClick={() => onLink({ account: r.account })}>Link</Button>
             </div>
           ))}
         </div>
       ) : <Empty title="Every account seen so far is linked" />}
-      <Modal open={Boolean(linking)} onClose={() => setLinking(null)} title="Link Windows account" subtitle={linking?.account}
-        footer={<><Button variant="ghost" onClick={() => setLinking(null)}>Cancel</Button><Button variant="primary" disabled={!employee} onClick={link}>Link</Button></>}>
-        <Select value={employee} onChange={(e) => setEmployee(e.target.value)} placeholder="Choose employee…"
-          options={Object.fromEntries(employees.map((e) => [e.id, `${e.full_name} (${e.employee_code})`]))} />
-        <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>
-      </Modal>
     </Card>
   )
 }
 
 export default function AdminEmployees() {
   const { version } = useLive()
-  const [employees, setEmployees] = useState([])
   const [tick, setTick] = useState(0)
-  const [adding, setAdding] = useState(null)
-  const [account, setAccount] = useState('')
-  const [error, setError] = useState('')
-
-  useEffect(() => { api.get('/admin/employees/').then((r) => setEmployees(r.data)) }, [tick])
-
-  async function addAccount() {
-    setError('')
-    try {
-      await api.post(`/admin/employees/${adding.id}/accounts/`, { account })
-      setAdding(null)
-      setTick((t) => t + 1)
-    } catch (e) { setError(errorText(e)) }
-  }
+  const [linking, setLinking] = useState(null)
 
   return (
     <>
@@ -115,18 +83,13 @@ export default function AdminEmployees() {
             { key: 'p', label: 'Permissions', render: (r) => <div className="text-xs text-ink-2">up to {r.max_sensitivity}<div className="mt-1 flex flex-wrap gap-1">{r.allowed_categories.map((c) => <Pill key={c}>{c}</Pill>)}</div></div> },
             { key: 'a', label: 'Windows accounts', render: (r) => <AccountsCell row={r} reload={() => setTick((t) => t + 1)} /> },
           ]}
-          extraActions={(row) => <Button size="sm" variant="ghost" icon={Link2} title="Link account" onClick={() => { setAdding(row); setAccount(''); setError('') }} />}
+          extraActions={(row) => <Button size="sm" variant="ghost" icon={Link2} title="Link account" onClick={() => setLinking({ employee: row })} />}
           emptyText="No employees yet. Add the people whose laptops are monitored."
         />
-        <Unlinked employees={employees} version={version} onLinked={() => setTick((t) => t + 1)} />
+        <Unlinked version={`${version}-${tick}`} onLink={setLinking} />
       </div>
-      <Modal open={Boolean(adding)} onClose={() => setAdding(null)} title="Link Windows account" subtitle={adding?.full_name}
-        footer={<><Button variant="ghost" onClick={() => setAdding(null)}>Cancel</Button><Button variant="primary" onClick={addAccount}>Link</Button></>}>
-        <input className="h-9 w-full rounded-lg border border-line-2 bg-canvas px-3 font-mono text-sm outline-none focus:border-accent" autoFocus
-          placeholder="MACBOOK\bilal" value={account} onChange={(e) => setAccount(e.target.value)} />
-        <p className="mt-2 text-xs text-ink-3">Format MACHINE\username. Microsoft accounts appear as MICROSOFTACCOUNT\email.</p>
-        <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>
-      </Modal>
+      <LinkAccountModal open={Boolean(linking)} account={linking?.account} employee={linking?.employee}
+        onClose={() => setLinking(null)} onLinked={() => setTick((t) => t + 1)} />
     </>
   )
 }

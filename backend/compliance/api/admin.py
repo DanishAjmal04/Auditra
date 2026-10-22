@@ -1,10 +1,14 @@
 """Administration: users, employees and accounts, catalogue, rules, agents, audit trail, reset."""
+from datetime import timedelta
+
 from django.db import transaction
 from django.db.models import Count, Max
+from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
+from ..incidents import ORG_LEVEL_CODES
 from ..models import (
     Agent, AiDayScore, AuditEntry, AuditraUser, BreachRecord, CatalogueEntry, ComplianceJobRun, Employee,
     EmployeeAccount, Event, Incident, NotificationLog, Rule, normalize_account,
@@ -51,10 +55,9 @@ class EmployeeViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             return Response({'error': f'{account} already belongs to {existing.employee.full_name}.'},
                             status=status.HTTP_400_BAD_REQUEST)
         link, _ = EmployeeAccount.objects.get_or_create(account=account, defaults={'employee': employee})
-        relinked = _link_events(account, employee)
-        audit(request, 'employee.account_link', account, employee=employee.full_name, events_relinked=relinked)
-        return Response({**EmployeeAccountSerializer(link).data, 'events_relinked': relinked},
-                        status=status.HTTP_201_CREATED)
+        result = _reassign(account, employee)
+        audit(request, 'employee.account_link', account, employee=employee.full_name, **result)
+        return Response({**EmployeeAccountSerializer(link).data, **result}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path=r'accounts/(?P<account_id>[^/.]+)')
     def remove_account(self, request, pk=None, account_id=None):
@@ -62,23 +65,49 @@ class EmployeeViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         link = EmployeeAccount.objects.filter(pk=account_id, employee=employee).first()
         if not link:
             return Response(status=status.HTTP_404_NOT_FOUND)
-        Event.objects.filter(employee=employee, account__iexact=link.account).update(employee=None)
-        audit(request, 'employee.account_unlink', link.account, employee=employee.full_name)
+        account = link.account
         link.delete()
+        result = _reassign(account, None)
+        audit(request, 'employee.account_unlink', account, employee=employee.full_name, **result)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-def _link_events(account, employee):
-    username = account.split('\\')[-1]
-    qs = Event.objects.filter(employee__isnull=True)
+def _account_events(account):
     if '\\' in account:
-        qs = qs.filter(account__iexact=account)
-    else:
-        qs = qs.filter(account__iendswith='\\' + username)
-    count = qs.update(employee=employee)
-    _refresh_shift_flags(employee)
-    Incident.objects.filter(employee__isnull=True, account__iexact=account).update(employee=employee)
-    return count
+        return Event.objects.filter(account__iexact=account)
+    return Event.objects.filter(account__iendswith='\\' + account)
+
+
+def _reassign(account, employee):
+    """Move an account's recent activity to (or away from) an employee and re-run detection on it.
+
+    Permissions, shift and role decide what is a violation, so incidents raised under the old owner are
+    re-evaluated: untouched open ones are replaced, ones an officer already acted on are kept.
+    """
+    from ..ingest import analyse_events
+
+    since = timezone.now() - timedelta(days=7)
+    events = list(_account_events(account).filter(occurred_at__gte=since).order_by('occurred_at'))
+    for event in events:
+        event.employee = employee
+        if employee:
+            event.outside_shift = not employee.is_on_shift(event.occurred_at)
+        else:
+            local = timezone.localtime(event.occurred_at)
+            event.outside_shift = local.weekday() >= 5 or not (8 <= local.hour < 18)
+    Event.objects.bulk_update(events, ['employee', 'outside_shift'])
+    _account_events(account).filter(occurred_at__lt=since).update(employee=employee)
+
+    stale = (
+        Incident.objects.filter(account__iexact=account, status='OPEN', actions__isnull=True)
+        .exclude(rule__code__in=ORG_LEVEL_CODES)
+    )
+    replaced = stale.count()
+    stale.delete()
+    kept = Incident.objects.filter(account__iexact=account)
+    kept.update(employee=employee)
+    created = analyse_events(events)['incidents_created'] if events else 0
+    return {'events_relinked': len(events), 'incidents_replaced': replaced, 'incidents_raised': created}
 
 
 def _refresh_shift_flags(employee):

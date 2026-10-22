@@ -138,6 +138,20 @@ class ApiTests(TestCase):
         self.assertEqual(linked.status_code, 201)
         self.assertEqual(linked.data['events_relinked'], 1)
 
+    def test_linking_re_evaluates_with_the_new_permissions(self):
+        from ..ingest import ingest_events
+        from ..models import Incident
+        a = agent()
+        ingest_events([file_event('FILE_READ', local(11), r'Finance\x.csv', account=r'MACBOOK\newhire')], agent=a)
+        self.assertEqual(Incident.objects.get().rule_codes, ['role_scope'])  # unlinked: no permissions
+        self.login(self.admin)
+        url = f'/api/admin/employees/{self.org["bilal"].id}/accounts/'
+        linked = self.client.post(url, {'account': r'MACBOOK\newhire'}, format='json')
+        self.assertEqual(linked.data['incidents_replaced'], 1)
+        self.assertEqual(Incident.objects.count(), 0)  # Bilal may open Finance files
+        self.client.delete(f'{url}{linked.data["id"]}/')
+        self.assertEqual(Incident.objects.count(), 1)  # unlinked again: back to no permissions
+
     def test_pdf_report(self):
         self.login(self.officer)
         response = self.client.get('/api/reports/compliance.pdf?days=7')

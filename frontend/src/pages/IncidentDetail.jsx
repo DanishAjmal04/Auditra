@@ -7,6 +7,7 @@ import { useLive } from '../lib/live'
 import { CATEGORIES, DAYS, SEVERITY_STYLE, STATUS_LABEL, article, full, time } from '../lib/format'
 import { eventSentence } from '../components/EventIcon'
 import { EventRow } from '../components/Feeds'
+import LinkAccountModal from '../components/LinkAccount'
 import { Button, Card, CardHeader, Empty, ErrorNote, Modal, Spinner, Textarea, cx } from '../components/ui'
 
 const KIND_TEXT = { VIOLATION: 'Potential violation', INDICATOR: 'Risk indicator', ANOMALY: 'AI anomaly' }
@@ -42,6 +43,7 @@ export default function IncidentDetail() {
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
 
   const load = useCallback(() => api.get(`/incidents/${id}/`).then((r) => setIncident(r.data)).catch((e) => setError(errorText(e))), [id])
   useEffect(() => { load() }, [load, version])
@@ -106,7 +108,7 @@ export default function IncidentDetail() {
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[13px]">{incident.account}</span>
                     <span className="text-ink-3">not linked to an employee</span>
-                    {isAdmin && <Link to="/admin/employees" className="inline-flex items-center gap-1 text-accent hover:underline"><Link2 size={13} />Link account</Link>}
+                    {isAdmin && <button onClick={() => setLinkOpen(true)} className="inline-flex items-center gap-1 text-accent hover:underline"><Link2 size={13} />Link to an employee</button>}
                   </span>
                 ) : <span className="text-ink-2">Organisation (from GDPR records)</span>}
                 {emp && <span className="text-ink-3"> · {emp.role_label}, {emp.department}</span>}
@@ -256,6 +258,8 @@ export default function IncidentDetail() {
           )}
         </div>
       </div>
+
+      <LinkAccountModal open={linkOpen} account={incident.account} onClose={() => setLinkOpen(false)} onLinked={load} />
 
       <Modal open={Boolean(pending)} onClose={() => setPending(null)}
         title={pending === 'REPORT_LOST_DEVICE' ? 'Report lost device' : ACTIONS.find(([k]) => k === pending)?.[1] || 'Reopen'}
