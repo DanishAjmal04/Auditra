@@ -1,146 +1,271 @@
+from django.utils import timezone
 from rest_framework import serializers
+
 from .models import (
-    AuditraUser, Log, Rule, Violation,
-    ConsentRecord, DataSubjectRequest,
-    BreachRecord, ProcessingActivity,
-    DPORecord, Report
+    CATEGORY_CHOICES, Agent, AuditEntry, AuditraUser, AutomatedDecision, BreachRecord, CatalogueEntry,
+    ConsentRecord, DataSubject, DataSubjectRequest, DPORecord, Employee, EmployeeAccount, Event, Incident,
+    IncidentAction, ProcessingActivity, Rule,
 )
 
+CATEGORY_CODES = {code for code, _ in CATEGORY_CHOICES}
 
-class AuditraUserSerializer(serializers.ModelSerializer):
-    name = serializers.SerializerMethodField()
-    role = serializers.SerializerMethodField()
-    status = serializers.SerializerMethodField()
-    created_at = serializers.DateTimeField(source='date_joined', read_only=True)
+
+class EmployeeBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Employee
+        fields = ['id', 'full_name', 'employee_code', 'department', 'role', 'employment_type', 'status']
+
+
+class EventSerializer(serializers.ModelSerializer):
+    employee = EmployeeBriefSerializer(read_only=True)
+    type_label = serializers.CharField(source='get_event_type_display', read_only=True)
+    catalogue_name = serializers.CharField(source='catalogue_entry.name', read_only=True, default='')
+    data_subject_name = serializers.CharField(source='data_subject.name', read_only=True, default='')
 
     class Meta:
-        model = AuditraUser
-        fields = ['id', 'name', 'email', 'role', 'status', 'created_at']
-
-    def get_name(self, obj):
-        return obj.get_full_name().strip() or obj.username
-
-    def get_role(self, obj):
-        return obj.role.upper()
-
-    def get_status(self, obj):
-        return 'ACTIVE' if obj.is_active else 'INACTIVE'
-
-
-class LogSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Log
+        model = Event
         fields = [
-            'id', 'user_id', 'timestamp', 'resource_accessed',
-            'action', 'resource_sensitivity', 'ip_address',
-            'purpose', 'is_outside_hours', 'created_at'
+            'id', 'event_type', 'type_label', 'occurred_at', 'received_at', 'machine', 'account', 'employee',
+            'path', 'file_name', 'process', 'domain', 'device', 'source_ip', 'logon_type', 'details',
+            'catalogue_name', 'category', 'sensitivity', 'data_subject_name', 'outside_shift', 'source',
+            'source_event_id',
         ]
 
 
-class RuleSerializer(serializers.ModelSerializer):
+class IncidentActionSerializer(serializers.ModelSerializer):
+    actor = serializers.CharField(source='actor.username', read_only=True, default='system')
+    action_label = serializers.CharField(source='get_action_display', read_only=True)
+
     class Meta:
-        model = Rule
+        model = IncidentAction
+        fields = ['id', 'action', 'action_label', 'note', 'actor', 'created_at']
+
+
+class IncidentListSerializer(serializers.ModelSerializer):
+    employee = EmployeeBriefSerializer(read_only=True)
+    rule_code = serializers.CharField(source='rule.code', read_only=True, default='')
+    event_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Incident
         fields = [
-            'id', 'gdpr_article', 'description',
-            'logic_definition', 'severity', 'enabled', 'created_at'
+            'id', 'number', 'kind', 'rule_code', 'rule_codes', 'title', 'summary', 'articles', 'severity',
+            'rule_severity', 'score', 'ai_score', 'status', 'employee', 'account', 'machine', 'detected_at',
+            'updated_at', 'event_count',
         ]
 
 
-class ViolationSerializer(serializers.ModelSerializer):
-    log = LogSerializer(read_only=True)
-    rule = RuleSerializer(read_only=True)
+class IncidentDetailSerializer(IncidentListSerializer):
+    events = EventSerializer(many=True, read_only=True)
+    actions = IncidentActionSerializer(many=True, read_only=True)
+    rule_description = serializers.CharField(source='rule.description', read_only=True, default='')
+    breaches = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Violation
-        fields = [
-            'id', 'log', 'rule', 'detected_at',
-            'is_anomaly', 'risk_score', 'status', 'reason'
+    class Meta(IncidentListSerializer.Meta):
+        fields = IncidentListSerializer.Meta.fields + [
+            'reasons', 'score_breakdown', 'ai_reason', 'events', 'actions', 'rule_description', 'breaches',
         ]
 
+    def get_breaches(self, obj):
+        return [{'id': str(b.id), 'title': b.title, 'deadline': b.notification_deadline} for b in obj.breaches.all()]
 
-class ConsentRecordSerializer(serializers.ModelSerializer):
+
+class EmployeeAccountSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ConsentRecord
+        model = EmployeeAccount
+        fields = ['id', 'account', 'created_at']
+
+
+class EmployeeSerializer(serializers.ModelSerializer):
+    accounts = EmployeeAccountSerializer(many=True, read_only=True)
+    role_label = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = Employee
         fields = [
-            'id', 'user_id', 'purpose', 'lawful_basis',
-            'declared_at', 'is_valid', 'active_processing'
+            'id', 'full_name', 'employee_code', 'email', 'department', 'role', 'role_label', 'employment_type',
+            'status', 'shift_start', 'shift_end', 'work_days', 'max_sensitivity', 'allowed_categories',
+            'left_at', 'accounts', 'created_at',
         ]
 
+    def validate_allowed_categories(self, value):
+        unknown = set(value or []) - CATEGORY_CODES
+        if unknown:
+            raise serializers.ValidationError(f'Unknown categories: {", ".join(sorted(unknown))}')
+        return sorted(set(value or []))
 
-class DataSubjectRequestSerializer(serializers.ModelSerializer):
-    deadline = serializers.SerializerMethodField()
-    received_at_date = serializers.SerializerMethodField()
+    def validate_work_days(self, value):
+        if any(not isinstance(d, int) or d < 0 or d > 6 for d in value or []):
+            raise serializers.ValidationError('Work days are numbers 0 (Monday) to 6 (Sunday).')
+        return sorted(set(value or []))
 
-    class Meta:
-        model = DataSubjectRequest
-        fields = [
-            'id', 'subject_id', 'right_type',
-            'received_at', 'received_at_date',
-            'response_deadline', 'deadline', 'status'
-        ]
-
-    def get_deadline(self, obj):
-        return obj.response_deadline.strftime('%Y-%m-%d')
-
-    def get_received_at_date(self, obj):
-        return obj.received_at.strftime('%Y-%m-%d')
-
-
-class BreachRecordSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BreachRecord
-        fields = [
-            'id', 'violation', 'detected_at',
-            'notification_deadline', 'notification_sent', 'severity'
-        ]
+    def validate(self, attrs):
+        status = attrs.get('status', getattr(self.instance, 'status', 'ACTIVE'))
+        if status == 'LEFT' and not attrs.get('left_at') and not getattr(self.instance, 'left_at', None):
+            attrs['left_at'] = timezone.now()
+        if status == 'ACTIVE':
+            attrs['left_at'] = None
+        return attrs
 
 
 class ProcessingActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProcessingActivity
-        fields = [
-            'id', 'activity_name', 'purpose', 'legal_basis',
-            'data_categories', 'retention_period',
-            'security_measures', 'created_at'
-        ]
+        fields = ['id', 'activity_name', 'purpose', 'legal_basis', 'data_categories', 'retention_period',
+                  'security_measures', 'created_at']
+
+
+class CatalogueEntrySerializer(serializers.ModelSerializer):
+    processing_activity_name = serializers.CharField(source='processing_activity.activity_name', read_only=True,
+                                                     default='')
+
+    class Meta:
+        model = CatalogueEntry
+        fields = ['id', 'name', 'path_prefix', 'category', 'sensitivity', 'processing_activity',
+                  'processing_activity_name', 'owner_department', 'retention_days', 'created_at']
+
+
+class DataSubjectSerializer(serializers.ModelSerializer):
+    consent_status = serializers.SerializerMethodField()
+    open_requests = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DataSubject
+        fields = ['id', 'name', 'reference', 'email', 'path_prefix', 'consent_status', 'open_requests', 'created_at']
+
+    def get_consent_status(self, obj):
+        statuses = {c.status for c in obj.consents.all()}
+        if not statuses:
+            return 'NONE'
+        return 'GIVEN' if 'GIVEN' in statuses else 'WITHDRAWN'
+
+    def get_open_requests(self, obj):
+        return sum(1 for r in obj.requests.all() if r.status in DataSubjectRequest.OPEN_STATUSES)
+
+
+class ConsentRecordSerializer(serializers.ModelSerializer):
+    data_subject_name = serializers.CharField(source='data_subject.name', read_only=True)
+
+    class Meta:
+        model = ConsentRecord
+        fields = ['id', 'data_subject', 'data_subject_name', 'purpose', 'lawful_basis', 'status', 'given_at',
+                  'withdrawn_at']
+
+    def validate(self, attrs):
+        status = attrs.get('status', getattr(self.instance, 'status', 'GIVEN'))
+        if status == 'WITHDRAWN' and not attrs.get('withdrawn_at') and not getattr(self.instance, 'withdrawn_at', None):
+            attrs['withdrawn_at'] = timezone.now()
+        if status == 'GIVEN':
+            attrs['withdrawn_at'] = None
+        return attrs
+
+
+class DataSubjectRequestSerializer(serializers.ModelSerializer):
+    data_subject_name = serializers.CharField(source='data_subject.name', read_only=True)
+    article = serializers.SerializerMethodField()
+    overdue = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DataSubjectRequest
+        fields = ['id', 'data_subject', 'data_subject_name', 'right_type', 'article', 'received_at',
+                  'response_deadline', 'status', 'completed_at', 'exemption_note', 'notes', 'overdue']
+        extra_kwargs = {'response_deadline': {'required': False}}
+
+    def get_article(self, obj):
+        return DataSubjectRequest.RIGHT_ARTICLE.get(obj.right_type)
+
+    def get_overdue(self, obj):
+        return obj.status in DataSubjectRequest.OPEN_STATUSES and obj.response_deadline < timezone.now()
+
+    def update(self, instance, validated_data):
+        if validated_data.get('status') in DataSubjectRequest.OPEN_STATUSES:
+            validated_data['completed_at'] = None
+        return super().update(instance, validated_data)
+
+
+class BreachRecordSerializer(serializers.ModelSerializer):
+    incident_number = serializers.IntegerField(source='incident.number', read_only=True, default=None)
+    hours_left = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BreachRecord
+        fields = ['id', 'incident', 'incident_number', 'title', 'description', 'detected_at',
+                  'notification_deadline', 'severity', 'high_risk', 'authority_notified_at', 'subjects_notified_at',
+                  'hours_left']
+        extra_kwargs = {'notification_deadline': {'required': False}}
+
+    def get_hours_left(self, obj):
+        return round((obj.notification_deadline - timezone.now()).total_seconds() / 3600, 1)
+
+
+class AutomatedDecisionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AutomatedDecision
+        fields = ['id', 'system', 'subject_reference', 'data_subject', 'decision', 'significant_effect', 'made_at',
+                  'reviewed_by', 'reviewed_at']
 
 
 class DPORecordSerializer(serializers.ModelSerializer):
-    compliance_status = serializers.ReadOnlyField()
+    compliance_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = DPORecord
-        fields = [
-            'id', 'organization_name', 'dpo_required', 'name', 'contact',
-            'designated_at', 'scope', 'independent',
-            'direct_access_to_management', 'conflict_free',
-            'published_contact_details', 'compliance_status', 'updated_at'
-        ]
+        fields = ['id', 'organization_name', 'dpo_required', 'name', 'contact', 'designated_at', 'scope',
+                  'independent', 'direct_access_to_management', 'conflict_free', 'published_contact_details',
+                  'compliance_status', 'updated_at']
 
 
-class ReportSerializer(serializers.ModelSerializer):
+class RuleSerializer(serializers.ModelSerializer):
+    incident_count = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
-        model = Report
-        fields = [
-            'id', 'generated_at', 'period_covered',
-            'violation_summary', 'export_reference'
-        ]
+        model = Rule
+        fields = ['id', 'code', 'title', 'gdpr_article', 'articles', 'description', 'severity', 'kind', 'source',
+                  'enabled', 'incident_count']
+        read_only_fields = ['code', 'title', 'gdpr_article', 'articles', 'description', 'severity', 'kind', 'source']
 
 
-class StatsSerializer(serializers.Serializer):
-    total_violations = serializers.IntegerField()
-    anomaly_count = serializers.IntegerField()
-    compliance_score = serializers.IntegerField()
-    total_logs = serializers.IntegerField()
-    critical_open = serializers.IntegerField()
-    high_open = serializers.IntegerField()
-    resolved = serializers.IntegerField()
-    by_article = serializers.ListField()
+class AgentSerializer(serializers.ModelSerializer):
+    online = serializers.BooleanField(read_only=True)
+    event_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Agent
+        fields = ['id', 'hostname', 'ip_address', 'version', 'is_admin', 'console_user', 'collectors', 'revoked',
+                  'registered_at', 'last_seen', 'online', 'event_count']
 
 
-class SimulateSerializer(serializers.Serializer):
-    user = serializers.CharField()
-    action = serializers.CharField()
-    resource = serializers.CharField()
-    violations_triggered = serializers.IntegerField()
-    rules_fired = serializers.ListField(child=serializers.CharField())
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+
+    class Meta:
+        model = AuditraUser
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'last_login',
+                  'date_joined', 'password']
+        read_only_fields = ['last_login', 'date_joined']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        if not password:
+            raise serializers.ValidationError({'password': 'A password is required for a new user.'})
+        user = AuditraUser(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+
+class AuditEntrySerializer(serializers.ModelSerializer):
+    actor = serializers.CharField(source='actor.username', read_only=True, default='system')
+
+    class Meta:
+        model = AuditEntry
+        fields = ['id', 'actor', 'action', 'target', 'details', 'created_at']

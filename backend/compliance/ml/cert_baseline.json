@@ -1,0 +1,35 @@
+{
+  "source": "CERT r4.2 training split (2010-01-02 to 2010-10-29), 208,167 user-days, 1,000 users; exported from anomaly_v1",
+  "features": [
+    "activity_events",
+    "login_events",
+    "logins_after_hours",
+    "logins_weekend",
+    "distinct_hosts",
+    "after_hours_events",
+    "exfil_events",
+    "removable_media_events"
+  ],
+  "transform": "log1p",
+  "global_median": {
+    "activity_events": 2.4849066497880004,
+    "login_events": 0.6931471805599453,
+    "logins_after_hours": 0.0,
+    "logins_weekend": 0.0,
+    "distinct_hosts": 0.6931471805599453,
+    "after_hours_events": 0.6931471805599453,
+    "exfil_events": 1.3862943611198906,
+    "removable_media_events": 0.0
+  },
+  "global_scale": {
+    "activity_events": 0.6266781413305718,
+    "login_events": 0.256808005927571,
+    "logins_after_hours": 0.39868302384390314,
+    "logins_weekend": 0.14213427720358196,
+    "distinct_hosts": 0.19507056302123127,
+    "after_hours_events": 1.0276600098981747,
+    "exfil_events": 1.0276600098981747,
+    "removable_media_events": 0.5639938165675491
+  },
+  "min_user_days": 5
+}

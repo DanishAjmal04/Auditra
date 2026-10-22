@@ -1,210 +1,47 @@
-from django.urls import path
-from . import views
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from compliance.views import LogoutView
+from .api import admin, agent, auth, officer, reports
+from .tokens import AuditraTokenObtainPairView
 
+router = DefaultRouter()
+router.register('incidents', officer.IncidentViewSet, basename='incident')
+router.register('events', officer.EventViewSet, basename='event')
+router.register('employees', officer.EmployeeDirectoryViewSet, basename='employee')
+router.register('records/subjects', officer.DataSubjectViewSet, basename='subject')
+router.register('records/consents', officer.ConsentViewSet, basename='consent')
+router.register('records/requests', officer.RequestViewSet, basename='request')
+router.register('records/breaches', officer.BreachViewSet, basename='breach')
+router.register('records/processing', officer.ProcessingActivityViewSet, basename='processing')
+router.register('records/decisions', officer.DecisionViewSet, basename='decision')
+router.register('catalogue', admin.CatalogueViewSet, basename='catalogue')
+router.register('rules', admin.RuleViewSet, basename='rule')
+router.register('admin/users', admin.UserViewSet, basename='admin-user')
+router.register('admin/employees', admin.EmployeeViewSet, basename='admin-employee')
+router.register('admin/agents', admin.AgentViewSet, basename='admin-agent')
+router.register('admin/audit', admin.AuditViewSet, basename='admin-audit')
 
 urlpatterns = [
+    path('auth/login/', AuditraTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/logout/', auth.logout, name='logout'),
+    path('auth/me/', auth.me, name='me'),
 
-    # ==================================================
-    # GENERAL
-    # ==================================================
+    path('agent/register/', agent.register, name='agent-register'),
+    path('agent/heartbeat/', agent.heartbeat, name='agent-heartbeat'),
+    path('agent/events/', agent.events, name='agent-events'),
+    path('agent/inventory/', agent.inventory, name='agent-inventory'),
+    path('decisions/', agent.automated_decision, name='decisions-ingest'),
 
-    path(
-        'stats/',
-        views.stats,
-        name='stats'
-    ),
+    path('live/', officer.live, name='live'),
+    path('overview/', officer.overview, name='overview'),
+    path('records/dpo/', officer.dpo, name='dpo'),
+    path('reports/compliance.pdf', reports.compliance_report, name='compliance-report'),
 
-    path(
-        'logs/',
-        views.logs_list,
-        name='logs-list'
-    ),
+    path('admin/unlinked-accounts/', admin.unlinked_accounts, name='unlinked-accounts'),
+    path('admin/health/', admin.health, name='admin-health'),
+    path('admin/reset-monitoring/', admin.reset_monitoring, name='reset-monitoring'),
 
-    path(
-        'violations/',
-        views.violations_list,
-        name='violations-list'
-    ),
-
-    path(
-        'violations/<uuid:pk>/status/',
-        views.violation_update,
-        name='violation-update'
-    ),
-
-    path(
-        'simulate/',
-        views.simulate,
-        name='simulate'
-    ),
-
-
-    # ==================================================
-    # RULES
-    # ==================================================
-
-    path(
-        'rules/',
-        views.rules_list,
-        name='rules-list'
-    ),
-
-    path(
-        'rules/create/',
-        views.rule_create,
-        name='rule-create'
-    ),
-
-    path(
-        'rules/<uuid:pk>/',
-        views.rule_update,
-        name='rule-update'
-    ),
-
-
-    # ==================================================
-    # USER ACTIVITY
-    # ==================================================
-
-    path(
-        'users/',
-        views.users_list,
-        name='users-list'
-    ),
-
-    path(
-        'user-activity/',
-        views.user_activity,
-        name='user-activity'
-    ),
-
-
-    # ==================================================
-    # CONSENT
-    # ==================================================
-
-    path(
-        'consent-records/',
-        views.consent_records,
-        name='consent-records'
-    ),
-
-    path(
-        'consent-records/<uuid:pk>/',
-        views.consent_record_update,
-        name='consent-record-update'
-    ),
-
-    path(
-        'dpo/',
-        views.dpo_designation,
-        name='dpo-designation'
-    ),
-
-    path(
-        'processing-activities/',
-        views.processing_activities,
-        name='processing-activities'
-    ),
-
-    path(
-        'processing-activities/<uuid:pk>/',
-        views.processing_activity_detail,
-        name='processing-activity-detail'
-    ),
-
-
-    # ==================================================
-    # DATA SUBJECT RIGHTS
-    # ==================================================
-
-    path(
-        'deletion-requests/',
-        views.deletion_requests,
-        name='deletion-requests'
-    ),
-
-    path(
-        'deletion-requests/<uuid:pk>/',
-        views.deletion_request_update,
-        name='deletion-request-update'
-    ),
-
-    path(
-        'subject-access-requests/',
-        views.subject_access_requests,
-        name='subject-access-requests'
-    ),
-
-    path(
-        'subject-access-requests/<uuid:pk>/',
-        views.subject_access_request_update,
-        name='subject-access-request-update'
-    ),
-
-
-    # ==================================================
-    # REPORTS
-    # ==================================================
-
-    path(
-        'reports/',
-        views.reports,
-        name='reports'
-    ),
-
-    path(
-        'generate-pdf/',
-        views.generate_pdf,
-        name='generate-pdf'
-    ),
-
-    path(
-        'user-pdf/<str:user_id>/',
-        views.generate_user_pdf,
-        name='generate-user-pdf'
-    ),
-
-    path(
-        'ingest/',
-        views.ingest_logs,
-        name='ingest-logs'
-    ),
-
-
-    # ==================================================
-    # ADMIN
-    # ==================================================
-
-    path(
-        'admin/stats/',
-        views.admin_stats,
-        name='admin-stats'
-    ),
-
-    path(
-        'admin/users/',
-        views.admin_users,
-        name='admin-users'
-    ),
-
-    path(
-        'admin/users/create/',
-        views.admin_user_create,
-        name='admin-user-create'
-    ),
-
-    path(
-        'admin/users/<int:pk>/',
-        views.admin_user_update,
-        name='admin-user-update'
-    ),
-
-    path(
-        'admin/health/',
-        views.admin_health,
-        name='admin-health'
-    ),
+    path('', include(router.urls)),
 ]
