@@ -69,6 +69,18 @@ class IncidentDetailSerializer(IncidentListSerializer):
     def get_breaches(self, obj):
         return [{'id': str(b.id), 'title': b.title, 'deadline': b.notification_deadline} for b in obj.breaches.all()]
 
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        first = obj.events.select_related('catalogue_entry', 'data_subject').order_by('occurred_at').first()
+        data['data'] = None
+        if first and first.catalogue_entry:
+            data['data'] = {'name': first.catalogue_entry.name, 'category': first.catalogue_entry.category,
+                            'sensitivity': first.catalogue_entry.sensitivity,
+                            'subject': first.data_subject.name if first.data_subject else '',
+                            'subject_id': str(first.data_subject_id) if first.data_subject_id else ''}
+        data['occurred_at'] = first.occurred_at if first else obj.detected_at
+        return data
+
 
 class EmployeeAccountSerializer(serializers.ModelSerializer):
     class Meta:

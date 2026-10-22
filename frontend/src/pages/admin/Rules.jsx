@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../../lib/api'
 import { Articles, Card, PageHeader, Pill, SeverityBadge, Spinner, Tabs, cx } from '../../components/ui'
 
@@ -34,7 +35,9 @@ export default function Rules() {
                 <Articles items={rule.articles} max={6} />
               </div>
               <p className="mt-1 text-sm text-ink-2">{rule.description}</p>
-              <p className="mt-1 font-mono text-[11px] text-ink-3">{rule.code} · {rule.incident_count} incident(s)</p>
+              <p className="mt-1 font-mono text-[11px] text-ink-3">{rule.code} · {rule.incident_count
+                ? <Link to={`/incidents?rule=${rule.code}&status=`} className="text-accent hover:underline">{rule.incident_count} incident(s)</Link>
+                : '0 incidents'}</p>
             </div>
           </div>
         ))}

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Loader2, X } from 'lucide-react'
 import { SEVERITY_STYLE, article } from '../lib/format'
 
@@ -100,15 +101,16 @@ export function ScoreBar({ score, severity, wide }) {
   )
 }
 
-export function Stat({ label, value, hint, tone }) {
+export function Stat({ label, value, hint, tone, to }) {
   const tones = { crit: 'text-crit', high: 'text-high', ok: 'text-ok', accent: 'text-accent' }
-  return (
-    <Card className="px-5 py-4">
+  const body = (
+    <Card className={cx('px-5 py-4', to && 'transition-colors hover:border-accent/40')}>
       <p className="text-xs font-medium text-ink-3">{label}</p>
       <p className={cx('tabular mt-2 text-[28px] font-semibold leading-none tracking-tight', tones[tone] || 'text-ink')}>{value ?? '—'}</p>
       {hint && <p className="mt-2 truncate text-xs text-ink-3">{hint}</p>}
     </Card>
   )
+  return to ? <Link to={to} className="block">{body}</Link> : body
 }
 
 export function Empty({ icon: Icon, title, children }) {

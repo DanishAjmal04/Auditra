@@ -58,7 +58,12 @@ def _apply_score(incident, findings, rules, event, ai):
     incident.rule = rules[primary.code]
     incident.rule_codes = [f.code for f in findings]
     incident.title = rules[primary.code].title
-    incident.reasons = [primary.reason] + [f.reason for f in findings if f is not primary]
+    ordered = [primary] + [f for f in findings if f is not primary]
+    incident.reasons = [
+        {'code': f.code, 'title': rules[f.code].title, 'text': f.reason,
+         'articles': f.articles or rules[f.code].articles}
+        for f in ordered
+    ]
     incident.summary = primary.reason
     incident.articles = articles
     incident.rule_severity = rule_severity
@@ -193,7 +198,8 @@ def raise_ai_anomaly(employee, account, day, ai, latest_event, rules=None):
         machine=latest_event.machine,
         title=rule.title,
         summary=_ai_summary(employee, latest_event, ai),
-        reasons=[c for c in ai['reason'].split('; ')],
+        reasons=[{'code': 'ai_anomaly', 'title': rule.title, 'text': part, 'articles': list(rule.articles)}
+                 for part in ai['reason'].split('; ')],
         articles=list(rule.articles),
         rule_severity=rule.severity,
         score=round(ai['score']),

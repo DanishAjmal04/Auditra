@@ -41,9 +41,9 @@ export function article(a) {
   return a === 'Policy' ? 'Policy' : a === 'AI' ? 'AI' : `Art. ${a}`
 }
 
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-const dayFmt = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: 'short' })
-const fullFmt = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+const fullFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
 export function time(value) {
   return value ? timeFmt.format(new Date(value)) : '—'

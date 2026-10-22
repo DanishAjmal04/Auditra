@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Activity as ActivityIcon, Moon, Search } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Activity as ActivityIcon, Moon, Search, X } from 'lucide-react'
 import api, { list } from '../lib/api'
 import { useLive } from '../lib/live'
 import { CATEGORIES, full } from '../lib/format'
@@ -20,7 +21,11 @@ const TYPES = {
 
 export default function ActivityPage() {
   const { version } = useLive()
-  const [filters, setFilters] = useState({ type: '', category: '', q: '', outside_shift: false })
+  const [params, setParams] = useSearchParams()
+  const [filters, setFilters] = useState(() => ({
+    type: params.get('type') || '', category: params.get('category') || '', q: params.get('q') || '',
+    outside_shift: params.get('outside_shift') === '1', employee: params.get('employee') || '',
+  }))
   const [rows, setRows] = useState(null)
   const [count, setCount] = useState(0)
 
@@ -30,6 +35,7 @@ export default function ActivityPage() {
     if (filters.category) params.category = filters.category
     if (filters.q) params.q = filters.q
     if (filters.outside_shift) params.outside_shift = 1
+    if (filters.employee) params.employee = filters.employee
     const timer = setTimeout(() => api.get('/events/', { params }).then((r) => { setRows(list(r.data)); setCount(r.data.count) }), filters.q ? 300 : 0)
     return () => clearTimeout(timer)
   }, [filters, version])
@@ -37,7 +43,7 @@ export default function ActivityPage() {
   const columns = [
     { key: 'time', label: 'When', className: 'whitespace-nowrap', render: (r) => <span className="tabular text-xs text-ink-2">{full(r.occurred_at)}</span> },
     { key: 'who', label: 'Who', render: (r) => (
-      <div><p className="text-sm">{r.employee?.full_name || <span className="text-ink-3">not linked</span>}</p><p className="font-mono text-[11px] text-ink-3">{r.account}</p></div>
+      <div><p className="text-sm">{r.employee ? <Link to={`/employees/${r.employee.id}`} className="hover:text-accent">{r.employee.full_name}</Link> : <span className="text-ink-3">not linked</span>}</p><p className="font-mono text-[11px] text-ink-3">{r.account}</p></div>
     ) },
     { key: 'what', label: 'What happened', render: (r) => (
       <div className="flex items-start gap-2">
@@ -70,6 +76,12 @@ export default function ActivityPage() {
           <Select className="w-48" value={filters.type} placeholder="All activity" options={TYPES} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))} />
           <Select className="w-52" value={filters.category} placeholder="Any data category" options={CATEGORIES} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))} />
           <Checkbox label="Outside shift" checked={filters.outside_shift} onChange={(e) => setFilters((f) => ({ ...f, outside_shift: e.target.checked }))} />
+          {filters.employee && (
+            <button className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-xs font-medium text-accent"
+              onClick={() => { setFilters((f) => ({ ...f, employee: '' })); setParams({}) }}>
+              {rows?.[0]?.employee?.full_name || 'One employee'} <X size={12} />
+            </button>
+          )}
           <span className="tabular ml-auto text-xs text-ink-3">{count ?? 0} event(s)</span>
         </div>
         {rows === null ? <Spinner /> : <Table columns={columns} rows={rows} empty={<Empty icon={ActivityIcon} title="No events match" />} />}

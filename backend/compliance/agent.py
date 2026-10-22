@@ -26,6 +26,7 @@ import ctypes
 import json
 import os
 import queue
+import re
 import shutil
 import socket
 import sqlite3
@@ -111,14 +112,10 @@ def iso_local(aware):
 
 def system_time(root):
     created = root.find(f'.//{NS}TimeCreated')
-    raw = created.attrib['SystemTime'].replace('Z', '+00:00')
-    # Windows gives up to 7 fractional digits; Python accepts 6.
-    if '.' in raw:
-        head, tail = raw.split('.', 1)
-        digits = ''.join(ch for ch in tail if ch.isdigit())
-        zone = tail[len(digits):]
-        raw = f'{head}.{digits[:6]}{zone}'
-    return datetime.fromisoformat(raw)
+    # e.g. 2026-10-22T18:51:25.1234567Z: always UTC, up to 7 fractional digits (Python accepts 6).
+    match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?', created.attrib['SystemTime'])
+    stamp = match.group(1) + (f'.{match.group(2)[:6]}' if match.group(2) else '')
+    return datetime.fromisoformat(stamp).replace(tzinfo=dt_timezone.utc)
 
 
 def event_fields(root):

@@ -179,6 +179,8 @@ class IncidentViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(**{field: params[field]})
         if params.get('employee'):
             qs = qs.filter(employee_id=params['employee'])
+        if params.get('rule'):
+            qs = qs.filter(rule_codes__icontains=f'"{params["rule"]}"')
         if params.get('article'):
             qs = qs.filter(articles__icontains=f'"{params["article"]}"')
         if params.get('q'):

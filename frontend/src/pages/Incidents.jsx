@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { X } from 'lucide-react'
 import { Search, ShieldAlert } from 'lucide-react'
 import api, { list } from '../lib/api'
 import { useLive } from '../lib/live'
@@ -9,7 +10,11 @@ import { Articles, Card, Empty, Input, PageHeader, Pill, ScoreBar, Select, Sever
 export default function Incidents() {
   const { version } = useLive()
   const navigate = useNavigate()
-  const [filters, setFilters] = useState({ status: 'open', severity: '', kind: '', q: '' })
+  const [params, setParams] = useSearchParams()
+  const [filters, setFilters] = useState(() => ({
+    status: params.get('status') ?? 'open', severity: params.get('severity') || '', kind: params.get('kind') || '',
+    q: params.get('q') || '', employee: params.get('employee') || '', rule: params.get('rule') || '',
+  }))
   const [rows, setRows] = useState(null)
   const [count, setCount] = useState(0)
 
@@ -61,6 +66,12 @@ export default function Incidents() {
             options={['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']} />
           <Select className="w-44" value={filters.kind} onChange={set('kind')} placeholder="All kinds"
             options={[['VIOLATION', 'Potential violations'], ['ANOMALY', 'AI anomalies'], ['INDICATOR', 'Risk indicators']]} />
+          {(filters.employee || filters.rule) && (
+            <button className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-xs font-medium text-accent"
+              onClick={() => { setFilters((f) => ({ ...f, employee: '', rule: '' })); setParams({}) }}>
+              {filters.employee ? (rows?.[0]?.employee?.full_name || 'One employee') : `Rule ${filters.rule}`} <X size={12} />
+            </button>
+          )}
           <span className="tabular ml-auto text-xs text-ink-3">{count} incident(s)</span>
         </div>
         {rows === null ? <Spinner /> : (

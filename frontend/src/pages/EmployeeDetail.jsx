@@ -86,13 +86,15 @@ export default function EmployeeDetail() {
         </div>
         <div className="space-y-4">
           <Card>
-            <CardHeader icon={ShieldAlert} title="Incidents" subtitle={`${emp.incidents.length} most recent`} />
+            <CardHeader icon={ShieldAlert} title="Incidents" subtitle={`${emp.incidents.length} most recent`}
+              actions={<Link to={`/incidents?employee=${emp.id}&status=`} className="text-xs font-medium text-accent hover:underline">View all</Link>} />
             <div className="max-h-[440px] overflow-y-auto">
               {emp.incidents.length ? emp.incidents.map((i) => <IncidentRow key={i.id} incident={i} compact />) : <Empty title="No incidents for this employee" />}
             </div>
           </Card>
           <Card>
-            <CardHeader title="Recent activity" />
+            <CardHeader title="Recent activity"
+              actions={<Link to={`/activity?employee=${emp.id}`} className="text-xs font-medium text-accent hover:underline">View all</Link>} />
             <div className="max-h-[440px] overflow-y-auto">
               {emp.recent_events.length ? emp.recent_events.map((e) => <EventRow key={e.id} event={e} />) : <Empty title="No activity recorded" />}
             </div>

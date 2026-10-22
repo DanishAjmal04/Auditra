@@ -49,10 +49,10 @@ export default function Overview() {
       <PageHeader title="Overview" subtitle="Potential GDPR violations on monitored machines, updated live." />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label="Open violations" value={k?.open_incidents} hint={`${k?.incidents_today ?? 0} detected today`} />
-        <Stat label="Critical" value={k?.critical_open} tone={k?.critical_open ? 'crit' : undefined} hint={`${k?.high_open ?? 0} high risk`} />
-        <Stat label="Events today" value={k?.events_today} hint={`${k?.employees_monitored ?? 0} employees monitored`} />
-        <Stat label="Agents online" value={k ? `${k.agents_online} / ${k.agents_total}` : null} tone={k?.agents_online ? 'ok' : undefined}
+        <Stat to="/incidents" label="Open violations" value={k?.open_incidents} hint={`${k?.incidents_today ?? 0} detected today`} />
+        <Stat to="/incidents?severity=CRITICAL" label="Critical" value={k?.critical_open} tone={k?.critical_open ? 'crit' : undefined} hint={`${k?.high_open ?? 0} high risk`} />
+        <Stat to="/activity" label="Events today" value={k?.events_today} hint={`${k?.employees_monitored ?? 0} employees monitored`} />
+        <Stat to="/admin/agents" label="Agents online" value={k ? `${k.agents_online} / ${k.agents_total}` : null} tone={k?.agents_online ? 'ok' : undefined}
           hint={k?.precision != null ? `officer precision ${k.precision}%` : 'no closed incidents yet'} />
       </div>
 

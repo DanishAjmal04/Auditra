@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { BadgeCheck, Bot, FileWarning, HandHeart, Inbox, ListChecks, UserRound } from 'lucide-react'
 import api, { errorText } from '../lib/api'
 import { useLive } from '../lib/live'
@@ -102,7 +103,7 @@ function Breaches({ version }) {
         { name: 'subjects_notified_at', label: 'Subjects notified', type: 'datetime', half: true },
       ]}
       columns={[
-        { key: 't', label: 'Breach', render: (r) => <div><p className="font-medium">{r.title}</p>{r.incident_number && <p className="text-xs text-ink-3">from INC-{r.incident_number}</p>}</div> },
+        { key: 't', label: 'Breach', render: (r) => <div><p className="font-medium">{r.title}</p>{r.incident_number && <Link to={`/incidents/${r.incident}`} className="text-xs text-accent hover:underline">from INC-{r.incident_number}</Link>}</div> },
         { key: 'sev', label: 'Severity', render: (r) => <Pill tone={['HIGH', 'CRITICAL'].includes(r.severity) ? 'crit' : 'default'}>{r.severity}</Pill> },
         { key: 'clock', label: '72-hour clock', render: (r) => r.authority_notified_at
           ? <Pill tone="ok">authority notified</Pill>
@@ -196,7 +197,9 @@ function Dpo() {
 
 export default function Records() {
   const { version } = useLive()
-  const [tab, setTab] = useState('subjects')
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') || 'subjects'
+  const setTab = (value) => setParams({ tab: value })
   const views = {
     subjects: <Subjects />, consents: <Consents version={version} />, requests: <Requests version={version} />,
     breaches: <Breaches version={version} />, processing: <Processing />, decisions: <Decisions version={version} />, dpo: <Dpo />,

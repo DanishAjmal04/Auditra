@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { FolderLock } from 'lucide-react'
 import { useCollection } from '../../components/Crud'
 import Crud from '../../components/Crud'
@@ -22,7 +23,7 @@ export default function Catalogue() {
           { name: 'retention_days', label: 'Retention (days)', type: 'number', half: true, hint: 'Older files are flagged under Art. 5(1)(e)' },
         ]}
         columns={[
-          { key: 'n', label: 'Entry', render: (r) => <div><p className="font-medium">{r.name}</p><p className="break-all font-mono text-[11px] text-ink-3">{r.path_prefix}</p></div> },
+          { key: 'n', label: 'Entry', render: (r) => <div><Link to={`/activity?q=${encodeURIComponent(r.path_prefix.split('\\').pop())}`} className="font-medium hover:text-accent">{r.name}</Link><p className="break-all font-mono text-[11px] text-ink-3">{r.path_prefix}</p></div> },
           { key: 'c', label: 'Category', render: (r) => <span className="text-ink-2">{CATEGORIES[r.category]}</span> },
           { key: 's', label: 'Sensitivity', render: (r) => <Pill tone={r.sensitivity === 'HIGH' ? 'crit' : r.sensitivity === 'MEDIUM' ? 'warn' : 'default'}>{r.sensitivity}</Pill> },
           { key: 'p', label: 'RoPA', render: (r) => r.processing_activity_name ? <span className="text-ink-2">{r.processing_activity_name}</span> : <Pill tone="crit">missing</Pill> },

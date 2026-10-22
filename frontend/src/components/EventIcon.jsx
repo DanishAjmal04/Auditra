@@ -31,6 +31,7 @@ export default function EventIcon({ type, size = 14, className }) {
 }
 
 export function eventSentence(e) {
+  // "copied salaries.csv to USB": the verb phrase without the person, used in sentences and evidence rows.
   const target = e.file_name || e.domain || e.device || e.details?.target_account || e.details?.task_name || ''
   switch (e.event_type) {
     case 'FILE_READ': return `opened ${target}`

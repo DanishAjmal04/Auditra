@@ -44,7 +44,9 @@ export function EventRow({ event, highlight }) {
       <EventIcon type={event.event_type} size={15} className={cx('mt-0.5 shrink-0', sensitive ? 'text-crit' : 'text-ink-3')} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-ink-2">
-          <span className="font-medium text-ink">{event.employee?.full_name || event.account}</span> {eventSentence(event)}
+          {event.employee
+            ? <Link to={`/employees/${event.employee.id}`} className="font-medium text-ink hover:text-accent">{event.employee.full_name}</Link>
+            : <span className="font-medium text-ink">{event.account}</span>} {eventSentence(event)}
         </p>
         {(notes.length > 0 || highlight) && (
           <p className={cx('mt-0.5 truncate text-xs', sensitive ? 'text-crit/80' : 'text-ink-3')}>
