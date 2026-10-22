@@ -57,6 +57,15 @@ def _clean(value, limit):
     return str(value or '').strip()[:limit]
 
 
+def canonical_account(account):
+    """One spelling per account whatever the source: DOMAIN upper case, user name lower case."""
+    account = account.replace('/', '\\')
+    if '\\' not in account:
+        return account.lower()
+    domain, user = account.split('\\', 1)
+    return f'{domain.upper()}\\{user.lower()}'
+
+
 def build_event(raw, agent, resolver):
     event_type = _clean(raw.get('type'), 30).upper()
     if event_type not in EVENT_TYPES:
@@ -70,7 +79,7 @@ def build_event(raw, agent, resolver):
         raise IngestError('occurred_at is in the future')
 
     machine = _clean(raw.get('machine') or (agent.hostname if agent else ''), 100)
-    account = _clean(raw.get('account'), 150)
+    account = canonical_account(_clean(raw.get('account'), 150))
     if not account:
         raise IngestError('account is missing')
     details = raw.get('details') if isinstance(raw.get('details'), dict) else {}
