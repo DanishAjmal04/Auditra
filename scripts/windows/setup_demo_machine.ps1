@@ -9,7 +9,7 @@ What it changes (undo with undo_demo_machine.ps1):
   * creates the company share C:\AuditraCompany with one folder per data category
   * adds an audit rule (SACL) to that folder so opening, changing or deleting a file is logged (4663)
   * enables the PrintService operational log (event 307)
-  * sets an account lockout policy of 5 failed attempts for 5 minutes (event 4740)
+  * sets an account lockout policy of 6 failed attempts for 5 minutes (event 4740), one more than the brute-force rule needs
   * enlarges the Security log to 256 MB so demo events are not overwritten
   * creates the local standard account "bilal" (you type the password)
 #>
@@ -90,7 +90,7 @@ Write-Host '5/7  Enabling the print log' -ForegroundColor Cyan
 wevtutil sl Microsoft-Windows-PrintService/Operational /e:true
 
 Write-Host '6/7  Lockout policy and Security log size' -ForegroundColor Cyan
-net accounts /lockoutthreshold:5 /lockoutduration:5 /lockoutwindow:5 | Out-Null
+net accounts /lockoutthreshold:6 /lockoutduration:5 /lockoutwindow:5 | Out-Null
 wevtutil sl Security /ms:268435456
 
 Write-Host '7/7  Local employee account "bilal"' -ForegroundColor Cyan
