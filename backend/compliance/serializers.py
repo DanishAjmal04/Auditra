@@ -236,13 +236,18 @@ class AgentSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = AuditraUser
         fields = ['id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'last_login',
                   'date_joined', 'password']
         read_only_fields = ['last_login', 'date_joined']
+
+    def validate_password(self, value):
+        if value and len(value) < 8:
+            raise serializers.ValidationError('Use at least 8 characters.')
+        return value
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)

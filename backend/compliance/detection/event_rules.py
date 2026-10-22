@@ -305,9 +305,9 @@ def web_visit(event):
     worst = max(recent, key=lambda e: SENSITIVITY_RANK[e.catalogue_entry.sensitivity])
     severity = 'HIGH' if worst.catalogue_entry.sensitivity == 'HIGH' else 'MEDIUM'
     return Finding('file_sharing_site',
-                   f'{who(event)} visited the file-sharing site {event.domain} {len(recent)} file event(s) after '
-                   f'opening personal data (last: {worst.file_name}, {worst.catalogue_entry.category}). '
-                   f'Possible upload of personal data.',
+                   f'{who(event)} visited the file-sharing site {event.domain} within 30 minutes of using '
+                   f'{len(recent)} personal-data file(s) (most sensitive: {worst.file_name}, '
+                   f'{worst.catalogue_entry.category}). Possible upload of personal data.',
                    kind='VIOLATION', severity=severity, dedupe_key=key, evidence=recent[:5])
 
 

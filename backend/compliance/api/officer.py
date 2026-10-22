@@ -69,19 +69,18 @@ def kpis():
 @permission_classes([IsAdminOrComplianceOfficer])
 def live(request):
     """Polled every 2 seconds by the console. Returns what changed since the last poll."""
-    since = _since(request) or (timezone.now() - timedelta(minutes=10))
+    since = _since(request)
     now = timezone.now()
-    incidents = (
-        Incident.objects.filter(updated_at__gt=since)
-        .select_related('employee', 'rule')
-        .annotate(event_count=Count('events'))
-        .order_by('-updated_at')[:50]
-    )
-    new_ids = set(
-        Incident.objects.filter(detected_at__gt=since).values_list('id', flat=True)[:50]
-    )
-    events = Event.objects.filter(received_at__gt=since).select_related(
-        'employee', 'catalogue_entry', 'data_subject').order_by('-occurred_at')[:50]
+    incidents = Incident.objects.select_related('employee', 'rule').annotate(event_count=Count('events'))
+    events = Event.objects.select_related('employee', 'catalogue_entry', 'data_subject')
+    new_ids = set()
+    if since:
+        # Later polls: only what changed. The first poll (no since) returns the latest rows to fill the screen.
+        incidents = incidents.filter(updated_at__gt=since)
+        events = events.filter(received_at__gt=since)
+        new_ids = set(Incident.objects.filter(detected_at__gt=since).values_list('id', flat=True)[:50])
+    incidents = incidents.order_by('-updated_at')[:50]
+    events = events.order_by('-occurred_at')[:50]
     agents = Agent.objects.filter(revoked=False)
     data = IncidentListSerializer(incidents, many=True).data
     for item in data:
@@ -155,6 +154,10 @@ def employee_risk_rows():
             'ai_reason_today': ai.reason if ai else '',
             'last_activity': emp.last_event,
             'accounts': [a.account for a in emp.accounts.all()],
+            'max_sensitivity': emp.max_sensitivity,
+            'allowed_categories': emp.allowed_categories,
+            'shift': f"{emp.shift_start:%H:%M}-{emp.shift_end:%H:%M}",
+            'work_days': emp.work_days,
         })
     rows.sort(key=lambda r: (-(r['risk_score'] or 0), -(r['ai_score_today'] or 0)))
     return rows

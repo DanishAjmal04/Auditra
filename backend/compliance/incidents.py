@@ -58,7 +58,7 @@ def _apply_score(incident, findings, rules, event, ai):
     incident.rule = rules[primary.code]
     incident.rule_codes = [f.code for f in findings]
     incident.title = rules[primary.code].title
-    incident.reasons = [f.reason for f in findings]
+    incident.reasons = [primary.reason] + [f.reason for f in findings if f is not primary]
     incident.summary = primary.reason
     incident.articles = articles
     incident.rule_severity = rule_severity
