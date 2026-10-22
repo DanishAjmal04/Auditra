@@ -1,95 +1,130 @@
 # Auditra
 
-GDPR compliance monitor: a Django REST API, a React console, a Windows event agent, and a CERT-trained One-Class SVM that scores unusual user-days. The rule engine is the compliance detector. The model is a supporting anomaly signal.
+Auditra is a GDPR compliance monitor. A Windows agent on each employee laptop sends a small set of clean, structured events. The server maps each event to the GDPR articles it may breach and scores it out of 100, adding an anomaly score learned from CERT data. The compliance officer sees the incident within seconds, with the evidence and the actions to take.
 
-## Prerequisites
+Nothing in the console is simulated. Every event comes from a real machine. Every employee, folder, consent record and request is entered through the console.
 
-- Python 3.12
-- Node.js 20+
-- PostgreSQL with database `auditra_db` and user `auditra_user` / password `auditra123`
+Detection scope is the team's workbook `Auditra_GDPR_Violation_Mapping.xlsx`: 22 articles, the USB events and the other actions, 41 rules in all. The design is in [docs/superpowers/specs](docs/superpowers/specs/2026-10-22-live-monitoring-design.md).
 
-```sql
-CREATE USER auditra_user WITH PASSWORD 'auditra123';
-CREATE DATABASE auditra_db OWNER auditra_user;
-```
+## Parts
 
-Optional: copy `.env.example` to `.env`. The defaults in `backend/auditra/settings.py` already match that file, so a local demo runs without it.
+| Part | Where | What it does |
+|---|---|---|
+| Agent | `backend/compliance/agent.py` | Reads the Security, Plug and Play and PrintService logs, plus copies to USB drives, visits to watched sites in Chrome and Edge, and file ages. It sends only structured events. |
+| API | `backend/` (Django + DRF, Postgres) | Ingest, rules (`compliance/detection/`), score (`scoring.py`), AI (`ai.py`), and the officer and admin API |
+| Console | `frontend/` (React, Vite, Tailwind) | Officer and admin views with a live feed, polled every 2 s. Light and dark themes. |
+| ML research | `ml_pipeline_cert/` | The CERT r4.2 pipeline: 4 models evaluated, OCSVM exported. Its baselines feed `ai.py`. |
 
-## Backend
+## First-time setup (server laptop)
 
 ```powershell
+# Postgres: database auditra_db, user auditra_user / auditra123 (see .env.example)
 cd backend
-python -m venv venv
-.\venv\Scripts\activate
 python -m pip install -r requirements.txt
 python manage.py migrate
 python manage.py create_default_users
-python manage.py seed
-python manage.py load_anomaly_demo
-python manage.py runserver
-```
-
-`scikit-learn` must stay at **1.8.0**. The saved model was exported with that version.
-
-## Frontend
-
-```powershell
-cd frontend
+cd ..\frontend
 npm install
-npm run dev
 ```
 
-Open `http://localhost:5173`.
+The login accounts come from `create_default_users`. Change their passwords under Admin > Console Users.
 
-| User | Password | Role |
+## Demo day: two laptops
+
+**Laptop B** runs the server and the agent, and is the employee's machine. **Laptop A** is the officer and only needs a browser. Join both to the same phone hotspot.
+
+1. **Laptop B, once:** open PowerShell with *Run as administrator* and run:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\windows\setup_demo_machine.ps1
+   powershell -ExecutionPolicy Bypass -File scripts\windows\setup_server_firewall.ps1
+   ```
+   - The first script turns on Windows auditing, creates `C:\AuditraCompany` with its department folders, adds file-access auditing, turns on the print log and the lockout policy, and creates the local employee account `bilal`.
+   - The second opens ports 8000 and 5173 and prints this laptop's address.
+   - Undo everything with `undo_demo_machine.ps1`.
+   - Sign in as `bilal` once so Windows creates the profile.
+2. **Laptop B, start the server and the console:**
+   ```powershell
+   cd backend;  python manage.py runserver 0.0.0.0:8000
+   cd frontend; npm run dev
+   ```
+3. **Laptop B, start the agent** in an *Administrator* PowerShell and leave it open:
+   ```powershell
+   cd backend; python -m compliance.agent
+   ```
+   For a rehearsal, set `$env:AUDITRA_VERBOSE="1"` first: the window then prints every structured event before sending it.
+4. **Laptop A:** open `http://<laptop-B-ip>:5173` and sign in.
+5. **Configure the organisation live, as admin.** This is real configuration, not seed data.
+   - **Data Catalogue:** add `C:\AuditraCompany\Finance` (FINANCIAL, MEDIUM), `Payroll` (FINANCIAL, HIGH), `HR` (HR_EMPLOYEE, HIGH), `HR\employees_cnic.csv` (NATIONAL_ID, HIGH), `Medical` (HEALTH, HIGH), `Legal` (CRIMINAL, HIGH), `Customers` (CUSTOMER, MEDIUM) and `Biometrics` (BIOMETRIC, HIGH). Link each one to a processing activity, which you create in GDPR Records > Processing.
+   - **Employees & Access:** add Bilal Ahmed, Finance, Staff, shift 09:00–18:00, up to MEDIUM, categories FINANCIAL and CUSTOMER. Link the account `MACBOOK\bilal`, or use *Accounts seen by agents* once he has logged on.
+   - **GDPR Records:** add the data subject Ali Khan with the path `C:\AuditraCompany\Customers\ali_khan_profile.csv`, a consent record, and the DPO.
+   - Admin > Agents & Health shows the agent online with each collector's status.
+
+Before the presentation, check three things:
+- Bilal's shift covers the presentation time, or scene 2 is a HIGH violation, not a LOW indicator.
+- Bilal signs in with a password, not a Windows Hello PIN, so scene 9 produces failed-logon events.
+- Laptop B is set to never sleep while plugged in.
+
+Sign in on laptop A as **admin**: the admin sees every officer page and can also change shifts and consent live.
+
+### Scenes (do them on laptop B as `bilal`; laptop A shows each within about 10 seconds)
+
+| # | Bilal does | Officer sees |
 |---|---|---|
-| `compliance_officer` | `Auditra@2026` | Compliance officer |
-| `admin` | `Admin@2026` (from `create_default_users`) or `Auditra@2026` (if `seed` ran afterwards) | Admin |
+| 1 | Opens `Finance\invoices_2026.csv` | An activity row only, with no incident: the false-positive check |
+| 2 | Plugs in a USB stick during the shift | A LOW risk indicator (Art. 32) |
+| 3 | Opens `Payroll\salaries_2026.csv` | **Art. 25**, access beyond his role |
+| 4 | Opens `Medical\patient_records.csv` | **Art. 9**, special-category data, CRITICAL |
+| 5 | On laptop A, signed in as admin, open Employees & Access and set Bilal's shift to end now. Bilal then copies `HR\employees_cnic.csv` to the USB stick | **Art. 32, 5(1)(f), 87, 25**, CRITICAL, with the score breakdown and the AI points |
+| 6 | Opens `Customers\ali_khan_profile.csv` after the officer withdraws Ali's consent | **Art. 7**, CRITICAL |
+| 7 | Deletes `leads_1.csv`, `leads_2.csv` and `leads_3.csv` in `Customers` (run the setup script again to restore them) | **Mass deletion**, Art. 32 and 5(1)(f) |
+| 8 | Opens wetransfer.com after scene 6 | Possible upload of personal data, Art. 32 and 5 |
+| 9 | Locks with Win+L and types a wrong password 5 times, then the right one | **Brute force**, Art. 32. A 6th wrong password instead locks the account for 5 minutes (lockout indicator). |
+| 10 | Prints `Customers\fatima_noor_profile.csv` to "Microsoft Print to PDF" | Print indicator |
+| 11 | In an admin prompt: `net user temp1 P@ss12345 /add`, then `net localgroup administrators temp1 /add` | **Art. 25 and 32** account and privilege changes |
 
-`seed` resets the admin password to `Auditra@2026`. Use that password after seeding.
+After 3 violations in 7 days, every new score gains the **Art. 83** escalation. Officer actions are written to the audit trail: investigate, escalate, resolve, mark false positive, and report a lost device (which opens a breach record with the 72-hour clock). To rehearse again, use Admin > Agents & Health > *Reset activity*. It keeps the configuration.
 
-`.env` in the repo root points at database `auditra_db` with user `auditra_user` and password `auditra123`. To run the test suite without creating a Postgres test database:
+## Score
 
-```powershell
-$env:DB_ENGINE = "sqlite"
-$env:DB_NAME = ":memory:"
-python manage.py test compliance
-```
+Rule severity base (CRITICAL 70, HIGH 55, MEDIUM 35, LOW 15), then:
+- +5 per extra article, up to 10
+- +10 outside the shift
+- +10 for special-category or national-ID data
+- up to +15 from an AI score above 60
+- +10 for Art. 83
 
-Ingest key (header `X-Auditra-Ingest-Key`): `auditra-ingest-dev-key`.
+The total is capped at 100. Every incident stores the list of points it received.
 
-## Presentation path
+## AI score
 
-1. Log in as `compliance_officer` / `Auditra@2026`.
-2. Open Violations. Rows labelled `ML-ANOMALY` are the One-Class SVM (score above 60, plain-language reason). Rule rows are GDPR articles.
-3. Open User Activity and pick `demo_insider` to see the anomaly percent and reason.
-4. On the dashboard, run Simulate to add a rule-based hit.
-5. Open Reports and download the PDF (the request sends the access token).
-6. Log in as `admin` / `Auditra@2026`. Toggle a rule on Configure Rules. System Health shows the last compliance cycle.
-7. Optional live collection. An ordinary prompt still sends System and Application logs. An Administrator prompt is required for the Security log (logons, and event 6416 as `removable_media`). The agent does not invent file-export days, so the model demo remains `load_anomaly_demo`.
+The detector computes 8 features per employee per day (activity, logons, logons outside shift, weekend logons, machines, activity outside shift, copies to USB, USB connections).
+- Each feature is compared with the CERT r4.2 training baseline of 1,000 employees and 208,167 days. After 5 days of history, it is compared with the employee's own baseline instead.
+- The deviations combine into √Σz², mapped to 0–100. A deviation of 3 maps to 60, the alert line.
+- The score can only rise when behaviour becomes riskier.
+
+The exported One-Class SVM is kept as the research result. A behavioural smoke check showed it flattens out on extreme inputs: it gave an after-hours USB copy 51.7, below a normal day at 57.4. For that reason the console uses the explainable detector above.
+
+## Tests
 
 ```powershell
 cd backend
-$env:AUDITRA_INGEST_KEY = "auditra-ingest-dev-key"
-python -m compliance.agent
+$env:DB_ENGINE="sqlite"; $env:DB_NAME=":memory:"; $env:AUDITRA_SCHEDULER="off"
+python manage.py test compliance
 ```
 
-A Windows account such as `MACHINE\ataur` is staff. HIGH data for that account is an Art. 25 hit. Rule scores are fixed: critical 0.95, high 0.75, medium 0.50, low 0.25. Anomaly rows keep the model score.
-
-What to say: the rules catch known GDPR patterns. The One-Class SVM, trained on CERT insider-threat data and selected by a fixed validation rule among four candidates, scores each user-day from 0 to 100 and alerts above 60. The Windows agent collects logs. The committed demo fixture is what makes the model visible without the full CERT dataset.
+45 tests replay the exact agent payloads for every rule:
+- a clean baseline with no false positives
+- AI monotonicity
+- the agent token flow
+- officer actions and permissions
+- the PDF report
 
 ## Useful commands
 
 ```powershell
-python manage.py run_compliance_cycle --trigger manual
-python manage.py load_anomaly_demo
-python manage.py test compliance
+python manage.py run_compliance_cycle      # deadline, breach and automated-decision rules now
+python manage.py sync_rules                # re-create rules from compliance/rules_catalogue.py
+python manage.py reset_monitoring_data     # delete recorded activity (add --all-config to wipe setup too)
 ```
 
-CERT replay (only if `ml_pipeline_cert` has the dataset) can post to ingest with the same key:
-
-```powershell
-python 05_make_replay.py --post http://127.0.0.1:8000/api/ingest/
-```
-
-Set header support in that script only if you extend it; the management command `load_anomaly_demo` is the supported presentation feed.
+Business systems report automated decisions (Art. 22) to `POST /api/decisions/` with the header `X-Auditra-Ingest-Key`.

@@ -78,25 +78,25 @@ def send_compliance_notification(event_type, event_key, subject, message, recipi
     return result
 
 
-def notify_critical_violation(violation):
+def notify_critical_incident(incident):
+    who = incident.employee.full_name if incident.employee else (incident.account or 'organisation')
     return send_compliance_notification(
         event_type='CRITICAL_VIOLATION',
-        event_key=f'critical-violation:{violation.id}',
-        subject=f'Critical GDPR violation: {violation.rule.gdpr_article}',
+        event_key=f'critical-incident:{incident.id}',
+        subject=f'INC-{incident.number} critical: {incident.title}',
         message=(
-            f'A critical compliance violation was detected.\n\n'
-            f'Article: {violation.rule.gdpr_article}\n'
-            f'User: {violation.log.user_id}\n'
-            f'Resource: {violation.log.resource_accessed}\n'
-            f'Reason: {violation.reason}\n'
-            f'Risk score: {violation.risk_score}\n'
-            f'Detected at: {violation.detected_at.isoformat()}\n'
+            'A critical potential GDPR violation was detected.\n\n'
+            f'Articles: {", ".join(incident.articles)}\n'
+            f'Who: {who}\n'
+            f'What: {incident.summary}\n'
+            f'Risk score: {incident.score}/100\n'
+            f'Detected at: {incident.detected_at.isoformat()}\n'
         ),
     )
 
 
 def send_pending_compliance_notifications(now=None):
-    from .models import BreachRecord, DPORecord, DataSubjectRequest, Violation
+    from .models import BreachRecord, DPORecord, DataSubjectRequest, Incident
 
     now = now or timezone.now()
     totals = {'sent': 0, 'skipped': 0, 'failed': 0}
@@ -105,17 +105,17 @@ def send_pending_compliance_notifications(now=None):
         for key in totals:
             totals[key] += result[key]
 
-    critical_violations = Violation.objects.select_related('log', 'rule').filter(
-        rule__severity='CRITICAL',
+    critical = Incident.objects.select_related('employee').filter(
+        severity='CRITICAL',
         status='OPEN',
         detected_at__gte=now - timedelta(hours=24),
     ).order_by('-detected_at')[:20]
-    for violation in critical_violations:
-        add_result(notify_critical_violation(violation))
+    for incident in critical:
+        add_result(notify_critical_incident(incident))
 
     deadline_window = now + timedelta(hours=24)
-    breaches = BreachRecord.objects.select_related('violation').filter(
-        notification_sent=False,
+    breaches = BreachRecord.objects.filter(
+        authority_notified_at__isnull=True,
         notification_deadline__lte=deadline_window,
     )
     for breach in breaches:
@@ -128,15 +128,15 @@ def send_pending_compliance_notifications(now=None):
                 if overdue else 'Breach notification deadline approaching'
             ),
             message=(
-                f'Breach severity: {breach.severity}\n'
+                f'Breach: {breach.title} ({breach.severity})\n'
                 f'Notification deadline: {breach.notification_deadline.isoformat()}\n'
                 f'Status: {"OVERDUE" if overdue else "DUE WITHIN 24 HOURS"}\n'
-                f'Violation reference: {breach.violation_id}\n'
+                f'Incident reference: {breach.incident_id or "none"}\n'
             ),
         ))
 
     request_window = now + timedelta(days=3)
-    requests = DataSubjectRequest.objects.filter(
+    requests = DataSubjectRequest.objects.select_related('data_subject').filter(
         status__in=['PENDING', 'IN_PROGRESS'],
         response_deadline__lte=request_window,
     )
@@ -150,7 +150,7 @@ def send_pending_compliance_notifications(now=None):
                 if overdue else 'Data-subject request deadline approaching'
             ),
             message=(
-                f'Subject: {subject_request.subject_id}\n'
+                f'Subject: {subject_request.data_subject.name} ({subject_request.data_subject.reference})\n'
                 f'Right: {subject_request.right_type}\n'
                 f'Deadline: {subject_request.response_deadline.isoformat()}\n'
                 f'Status: {subject_request.status}\n'
@@ -167,7 +167,7 @@ def send_pending_compliance_notifications(now=None):
             subject=f'DPO designation status: {dpo_status.replace("_", " ")}',
             message=(
                 f'The current DPO designation status is {dpo_status}.\n'
-                'Open the DPO Verification page and complete the required controls.\n'
+                'Open GDPR Records > DPO and complete the required controls.\n'
             ),
         ))
 

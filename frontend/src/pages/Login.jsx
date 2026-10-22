@@ -1,420 +1,88 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
-
-import {
-  saveTokens,
-  getRoleFromToken,
-  isTokenExpired
-} from '../utils/auth'
-
+import { Navigate, useNavigate } from 'react-router-dom'
+import { Lock, Moon, ShieldCheck, Sun } from 'lucide-react'
+import { useTheme } from '../lib/theme'
+import { Button, ErrorNote, Field, Input } from '../components/ui'
+import { useAuth } from '../lib/auth'
+import { errorText } from '../lib/api'
 
 export default function Login() {
-
+  const { user, login } = useAuth()
+  const navigate = useNavigate()
+  const { theme, toggle } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
 
-  const navigate = useNavigate()
+  if (user) return <Navigate to="/" replace />
 
-
-  async function handleLogin(e) {
-
+  async function submit(e) {
     e.preventDefault()
-
-    setLoading(true)
+    setBusy(true)
     setError('')
-
     try {
-
-      const response = await axios.post(
-        'http://127.0.0.1:8000/api/auth/login/',
-        {
-          username: username.trim(),
-          password
-        }
-      )
-
-
-      console.log('LOGIN RESPONSE:', response.data)
-
-
-      const { access, refresh } = response.data
-
-
-      // Make sure backend actually returned tokens
-      if (!access || !refresh) {
-
-        console.error(
-          'Login response does not contain access/refresh:',
-          response.data
-        )
-
-        setError('Login failed: JWT tokens were not returned.')
-
-        return
-      }
-
-
-      // Save JWT tokens
-      saveTokens(access, refresh)
-
-
-      // Check token expiration
-      if (isTokenExpired()) {
-
-        console.error('Received JWT is already expired.')
-
-        setError('Login failed: received token is expired.')
-
-        return
-      }
-
-
-      // Get role from JWT
-      const role = getRoleFromToken()
-
-
-      console.log('JWT ROLE:', role)
-
-
-      // Role missing from JWT
-      if (!role) {
-
-        console.error(
-          'Role is missing from JWT payload.'
-        )
-
-        setError(
-          'Login successful, but user role is missing from JWT.'
-        )
-
-        return
-      }
-
-
-      // =========================
-      // ROLE BASED REDIRECT
-      // =========================
-
-      if (role === 'admin') {
-
-        navigate('/admin/dashboard', {
-          replace: true
-        })
-
-      }
-
-      else if (role === 'compliance_officer') {
-
-        navigate('/dashboard', {
-          replace: true
-        })
-
-      }
-
-      else {
-
-        console.error('Unknown role:', role)
-
-        setError(
-          `Unknown user role: ${role}`
-        )
-      }
-
-
+      await login(username, password)
+      navigate('/')
     } catch (err) {
-
-      console.error('Login error:', err)
-
-      console.error(
-        'Backend response:',
-        err.response?.data
-      )
-
-
-      setError(
-        err.response?.data?.detail ||
-        err.response?.data?.message ||
-        'Invalid credentials. Please try again.'
-      )
-
+      setError(err?.response?.status === 401 ? 'Wrong username or password.' : errorText(err))
     } finally {
-
-      setLoading(false)
-
+      setBusy(false)
     }
   }
 
-
   return (
-
-    <div style={{
-      display: 'flex',
-      height: '100vh'
-    }}>
-
-      {/* LEFT SIDE */}
-
-      <div
-        style={{
-          width: '40%',
-          background: '#1a1a2e',
-          color: 'white',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          padding: '60px 50px'
-        }}
-      >
-
-        <h1
-          style={{
-            fontSize: 32,
-            fontWeight: 700,
-            marginBottom: 8
-          }}
-        >
-          Auditra
-        </h1>
-
-
-        <p
-          style={{
-            color: '#8892b0',
-            fontSize: 13,
-            letterSpacing: 2,
-            marginBottom: 40
-          }}
-        >
-          GDPR COMPLIANCE MONITOR
-        </p>
-
-
-        <h2
-          style={{
-            fontSize: 22,
-            fontWeight: 600,
-            marginBottom: 16,
-            lineHeight: 1.4
-          }}
-        >
-          Automated compliance monitoring for your organization
-        </h2>
-
-
-        <p
-          style={{
-            color: '#8892b0',
-            fontSize: 14,
-            lineHeight: 1.7,
-            marginBottom: 32
-          }}
-        >
-          Auditra continuously analyzes system access logs,
-          detects GDPR violations, and generates audit-ready
-          compliance reports.
-        </p>
-
-
-        {[
-          'Rule-based GDPR checks',
-          'One-Class SVM (CERT-trained) supporting detector',
-          'Automated compliance reporting',
-          'GDPR Article traceability'
-        ].map((feature) => (
-
-          <div
-            key={feature}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              marginBottom: 12
-            }}
-          >
-
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: '#4fc3f7'
-              }}
-            />
-
-            <span
-              style={{
-                color: '#ccd6f6',
-                fontSize: 14
-              }}
-            >
-              {feature}
-            </span>
-
+    <div className="grid min-h-full lg:grid-cols-[1.1fr_1fr]">
+      <div className="relative hidden overflow-hidden border-r border-line bg-panel lg:block">
+        <div className="absolute inset-0 opacity-40"
+          style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(56,189,248,.18), transparent 45%), radial-gradient(circle at 80% 70%, rgba(240,68,56,.12), transparent 40%)' }} />
+        <div className="relative flex h-full flex-col justify-between p-12">
+          <div className="flex items-center gap-3">
+            <img src="/favicon.svg" alt="" className="h-10 w-10" />
+            <span className="text-lg font-semibold">Auditra</span>
           </div>
-
-        ))}
-
-      </div>
-
-
-      {/* RIGHT SIDE */}
-
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'white'
-        }}
-      >
-
-        <div style={{ width: 400 }}>
-
-          <h2
-            style={{
-              fontSize: 28,
-              fontWeight: 700,
-              marginBottom: 8
-            }}
-          >
-            Welcome back
-          </h2>
-
-
-          <p
-            style={{
-              color: '#666',
-              marginBottom: 32
-            }}
-          >
-            Sign in to your Auditra account
-          </p>
-
-
-          {/* ERROR */}
-
-          {error && (
-
-            <div
-              style={{
-                background: '#fff0f0',
-                border: '1px solid #ffcccc',
-                color: '#cc0000',
-                padding: '10px 14px',
-                borderRadius: 8,
-                marginBottom: 16,
-                fontSize: 14
-              }}
-            >
-              {error}
+          <div className="max-w-lg">
+            <h1 className="text-3xl font-semibold leading-tight tracking-tight">
+              Real-time GDPR compliance monitoring for every endpoint.
+            </h1>
+            <p className="mt-4 text-sm leading-relaxed text-ink-2">
+              Windows activity is mapped to the GDPR articles it may breach, scored with a transparent rule
+              model and an anomaly model trained on the CERT insider-threat dataset, and handed to the compliance
+              officer with the evidence.
+            </p>
+            <div className="mt-8 grid grid-cols-3 gap-3 text-xs">
+              {[['22', 'GDPR articles'], ['41', 'detection rules'], ['< 10 s', 'event to alert']].map(([v, l]) => (
+                <div key={l} className="rounded-lg border border-line bg-canvas/50 px-3 py-3">
+                  <p className="text-lg font-semibold text-accent">{v}</p>
+                  <p className="text-ink-3">{l}</p>
+                </div>
+              ))}
             </div>
-
-          )}
-
-
-          <form onSubmit={handleLogin}>
-
-            {/* USERNAME */}
-
-            <label
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                display: 'block',
-                marginBottom: 6
-              }}
-            >
-              Username
-            </label>
-
-
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
-              required
-              autoComplete="username"
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                border: '1px solid #ddd',
-                borderRadius: 8,
-                fontSize: 14,
-                marginBottom: 16,
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
-
-
-            {/* PASSWORD */}
-
-            <label
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                display: 'block',
-                marginBottom: 6
-              }}
-            >
-              Password
-            </label>
-
-
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                border: '1px solid #ddd',
-                borderRadius: 8,
-                fontSize: 14,
-                marginBottom: 24,
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
-
-
-            {/* LOGIN BUTTON */}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '13px',
-                background: loading ? '#999' : '#1a1a2e',
-                color: 'white',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: loading ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {loading
-                ? 'Signing in...'
-                : 'Sign In'
-              }
-            </button>
-
-          </form>
-
+          </div>
+          <p className="text-xs text-ink-3">Findings are potential violations and risk indicators, not legal determinations.</p>
         </div>
-
       </div>
-
+      <div className="relative flex items-center justify-center p-6">
+        <button onClick={toggle} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          className="absolute right-5 top-5 rounded-lg border border-line bg-panel p-2 text-ink-3 hover:text-ink">
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+        <form onSubmit={submit} className="w-full max-w-sm space-y-4">
+          <div className="mb-6">
+            <div className="mb-4 inline-flex rounded-xl border border-line bg-panel p-2.5"><ShieldCheck size={22} className="text-accent" /></div>
+            <h2 className="text-xl font-semibold">Sign in</h2>
+            <p className="mt-1 text-sm text-ink-3">Compliance officers and administrators only.</p>
+          </div>
+          <Field label="Username">
+            <Input autoFocus value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+          </Field>
+          <Field label="Password">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          </Field>
+          <ErrorNote>{error}</ErrorNote>
+          <Button type="submit" variant="primary" className="w-full" loading={busy} icon={Lock}>Sign in</Button>
+        </form>
+      </div>
     </div>
   )
 }
