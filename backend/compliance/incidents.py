@@ -19,8 +19,10 @@ def rule_map():
 
 
 def _articles(findings, rules):
+    """Union of articles, the primary (most severe) finding's articles first."""
     seen = []
-    for finding in findings:
+    primary = _primary(findings, rules)
+    for finding in [primary] + [f for f in findings if f is not primary]:
         for article in finding.articles or rules[finding.code].articles:
             if article not in seen:
                 seen.append(article)
@@ -62,7 +64,8 @@ def _apply_score(incident, findings, rules, event, ai):
     incident.rule_severity = rule_severity
     incident.score = score
     incident.score_breakdown = breakdown
-    incident.severity = level
+    # The displayed level never falls below what the rule itself says.
+    incident.severity = scoring.max_severity([level, rule_severity])
     if ai:
         incident.ai_score = ai['score']
         incident.ai_reason = ai['reason'][:400]
